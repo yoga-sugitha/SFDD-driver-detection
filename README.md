@@ -225,9 +225,9 @@ If you use this code, please cite:
 
 ```bibtex
 @misc{sfdd_driver_detection,
-  author = {Your Name},
-  title = {SFDD Driver Detection},
-  year = {2024},
+  author = Yoga Sugitha,
+  title = {Pipeline for SFDD Driver Detection with PyTorch Lightning},
+  year = {2025},
   publisher = {GitHub},
   url = {https://github.com/yourusername/sfdd_driver_detection}
 }

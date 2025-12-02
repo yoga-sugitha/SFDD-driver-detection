@@ -123,12 +123,45 @@ def generate_gradcam_visualizations(
     correct_mask = (predicted == y)
     incorrect_mask = ~correct_mask
     
-    num_correct = min(num_samples // 2, correct_mask.sum().item())
-    num_incorrect = min(num_samples // 2, incorrect_mask.sum().item())
+    num_correct_available = correct_mask.sum().item()
+    num_incorrect_available = incorrect_mask.sum().item()
     
-    correct_indices = torch.where(correct_mask)[0][:num_correct]
-    incorrect_indices = torch.where(incorrect_mask)[0][:num_incorrect]
-    selected_indices = torch.cat([correct_indices, incorrect_indices])
+    print(f"Available samples - Correct: {num_correct_available}, Incorrect: {num_incorrect_available}")
+    
+    # Strategy: Try to get equal split, but if one type is scarce, use what's available
+    target_per_type = num_samples // 2
+    
+    if num_correct_available >= target_per_type and num_incorrect_available >= target_per_type:
+        # Ideal case: enough of both types
+        num_correct = target_per_type
+        num_incorrect = target_per_type
+    elif num_correct_available + num_incorrect_available < num_samples:
+        # Not enough total samples
+        num_correct = num_correct_available
+        num_incorrect = num_incorrect_available
+    else:
+        # One type is scarce, take all of scarce type and fill the rest
+        if num_correct_available < target_per_type:
+            num_correct = num_correct_available
+            num_incorrect = min(num_samples - num_correct, num_incorrect_available)
+        else:
+            num_incorrect = num_incorrect_available
+            num_correct = min(num_samples - num_incorrect, num_correct_available)
+    
+    print(f"Selecting - Correct: {num_correct}, Incorrect: {num_incorrect}, Total: {num_correct + num_incorrect}")
+    
+    correct_indices = torch.where(correct_mask)[0][:num_correct] if num_correct > 0 else torch.tensor([], dtype=torch.long)
+    incorrect_indices = torch.where(incorrect_mask)[0][:num_incorrect] if num_incorrect > 0 else torch.tensor([], dtype=torch.long)
+    
+    # Concatenate indices
+    if len(correct_indices) > 0 and len(incorrect_indices) > 0:
+        selected_indices = torch.cat([correct_indices, incorrect_indices])
+    elif len(correct_indices) > 0:
+        selected_indices = correct_indices
+    elif len(incorrect_indices) > 0:
+        selected_indices = incorrect_indices
+    else:
+        selected_indices = torch.tensor([], dtype=torch.long)
     
     if len(selected_indices) == 0:
         print("⚠ No samples found for GradCAM visualization")
@@ -229,13 +262,22 @@ def generate_gradcam_visualizations(
             plt.close('all')
             continue
     
-    # Log to WandB
+    # Log to WandB with detailed statistics
     if gradcam_images:
+        # Count actual correct/incorrect in generated images
+        actual_correct = sum(1 for idx in selected_indices[:len(gradcam_images)] 
+                           if (predicted[idx] == y[idx]).item())
+        actual_incorrect = len(gradcam_images) - actual_correct
+        
         logger.experiment.log({
             "test/gradcam_samples": gradcam_images,
-            "test/gradcam_count": len(gradcam_images)
+            "test/gradcam_count": len(gradcam_images),
+            "test/gradcam_correct": actual_correct,
+            "test/gradcam_incorrect": actual_incorrect
         })
         print(f"\n✓ Logged {len(gradcam_images)} GradCAM visualizations to WandB")
+        print(f"  - Correct predictions: {actual_correct}")
+        print(f"  - Incorrect predictions: {actual_incorrect}")
     else:
         print("\n⚠ No GradCAM visualizations generated")
     
@@ -247,4 +289,4 @@ def generate_gradcam_visualizations(
         torch.cuda.empty_cache()
     
     # Ensure model stays in eval mode
-    model.model.eval()
+    model.model.eval() # pyright: ignore[reportAttributeAccessIssue]
