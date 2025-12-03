@@ -1,0 +1,74 @@
+# Main configuration file for SFDD Driver Detection
+# This is the base config that other configs can overwrite
+
+defaults:
+  model: resnet18_pretrained 
+  optimizer: adam
+  _self_
+
+# Experiment metadata
+experiment:
+  name: SFDD_driver_detection
+  seed: 42
+  id: exp001
+  tags: []
+
+# Data configuration
+data:
+  data_dir: /kaggle/input/state-farm-distracted-driver-detection/imgs/train
+  batch_size: 32
+  num_workers: 0 # Set to 0, but can be overrode later
+  val_split: 0.2
+  img_size: 224
+  task_type: multiclass
+  binary_mapping: c0_vs_rest
+
+# Training configuration
+# NOTE both accelerator and device are set to auto, let PyTorch Lightning arrange
+training:
+  max_epochs: 30
+  accelerator: auto
+  device: auto
+  log_every_n_steps: 10
+  early_stopping_patience: 15
+  gradient_clip_val: null # can be adjusted and added more params
+
+# Logging configuration
+logging:
+  enable_wandb: false
+  wandb_project: ACRIG-SFDD-Driver_Detection
+  wandb_offline: true
+  checkpoint_dir: checkpoints
+  log_model: false  # Log model to wandb
+
+# XAI (explainable AI) configuration
+xai:
+  enable_gradcam: false
+  num_correct_samples: 3
+  num_incorrect_samples: 3
+  inspect_architecture: false
+
+
+# class names (customizeable)
+class_names:
+  - "normal driver"
+  - "texting-right"
+  - "talking on the phone-right"
+  - "texting-left"
+  - "talking on the phone-left"
+  - "operating the radio"
+  - "drinking"
+  - "reaching behind"
+  - "hair and makeup"
+  - "talking to passenger"
+
+# Hydra configuration
+hydra:
+  run:
+    dir: outputs/${experiment.id}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: multirun/${experiment.id}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}
+  job:
+    chdir: true  # Change to output directory
+
