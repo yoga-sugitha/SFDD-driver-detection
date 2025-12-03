@@ -226,10 +226,10 @@ If you use this code, please cite:
 ```bibtex
 @misc{sfdd_driver_detection,
   author = Yoga Sugitha,
-  title = {Pipeline for SFDD Driver Detection with PyTorch Lightning},
-  year = {2025},
-  publisher = {GitHub},
-  url = {https://github.com/yourusername/sfdd_driver_detection}
+  title = Pipeline for SFDD Driver Detection with PyTorch Lightning and Hydra,
+  year = 2025,
+  publisher = GitHub,
+  url = {https://github.com/yoga-sugitha/sfdd_driver_detection}
 }
 ```
 
@@ -242,3 +242,4 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 - State Farm for the dataset
 - PyTorch Lightning team
 - Weights & Biases for logging tools
+- Hydra for complex experiment management
