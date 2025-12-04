@@ -86,9 +86,8 @@ def train(cfg: DictConfig):
 
     # setup data to get actual num_classes and class_names
     data_module.setup(stage='fit')
-    num_classes = data_module.get_num_classes
-    class_names = data_module.get_class_names
-
+    num_classes = data_module.num_classes
+    class_names = data_module.class_names
 
     print(f"\n✓ Task Type: {cfg.data.task_type}")
     print(f"✓ Number of Classes: {num_classes}")

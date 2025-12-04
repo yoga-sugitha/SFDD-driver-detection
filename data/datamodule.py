@@ -35,7 +35,7 @@ class SFDDDataModule(L.LightningDataModule):
         seed: int = 42,
         task_type: str = 'multiclass',  # 'binary' or 'multiclass'
         binary_mapping: str = 'c0_vs_rest',
-        binary_class_map: dict = None
+        binary_class_map: dict = None,
     ):
         super().__init__()
         self.data_dir = data_dir
@@ -46,6 +46,15 @@ class SFDDDataModule(L.LightningDataModule):
         self.task_type = task_type.lower()
         self.binary_mapping = binary_mapping
         self.binary_class_map = binary_class_map
+
+        # Immediately compute and store
+        self.num_classes = 2 if self.task_type == 'binary' else 10
+        self.class_names = (
+            ['Normal Driving', 'Distracted Driving'] if self.task_type == 'binary' else
+            ["normal driver", "texting-right", "talking on the phone-right",
+            "texting-left", "talking on the phone-left", "operating the radio",
+            "drinking", "reaching behind", "hair and makeup", "talking to passenger"]
+        )
         
         # Validate task type
         if self.task_type not in ['binary', 'multiclass']:
@@ -173,21 +182,6 @@ class SFDDDataModule(L.LightningDataModule):
                 f"Unknown binary_mapping: {self.binary_mapping}. "
                 f"Use 'c0_vs_rest' or 'custom'"
             )
-    
-    def get_num_classes(self):
-        """Return number of classes based on task type"""
-        return 2 if self.task_type == 'binary' else 10
-    
-    def get_class_names(self):
-        """Return class names based on task type"""
-        if self.task_type == 'binary':
-            return ['Normal Driving', 'Distracted Driving']
-        else:
-            return [
-                "normal driver", "texting-right", "talking on the phone-right",
-                "texting-left", "talking on the phone-left", "operating the radio",
-                "drinking", "reaching behind", "hair and makeup", "talking to passenger"
-            ]
     
     def train_dataloader(self):
         """Create training dataloader"""
