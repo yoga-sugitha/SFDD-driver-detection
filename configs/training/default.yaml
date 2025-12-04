@@ -1,0 +1,7 @@
+# default or fast training with 1 epoch only
+accelerator: "auto"
+devices: "auto"
+max_epochs: 1
+log_every_n_steps: 10
+gradient_clip_val: null          # or 1.0 if you want clipping
+early_stopping_patience: 7

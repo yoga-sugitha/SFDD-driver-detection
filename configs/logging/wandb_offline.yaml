@@ -1,0 +1,6 @@
+enable_wandb: true
+wandb_offline: true             # critical for Kaggle
+checkpoint_dir: "checkpoints"
+
+wandb:
+  wandb_project: "sfdd-driver-detection"

@@ -1,0 +1,8 @@
+data_dir: "/kaggle/input/state-farm-distracted-driver-detection/imgs/train"          # or your path
+batch_size: 32
+num_workers: 4
+val_split: 0.2
+img_size: 224
+seed: 42
+task_type: "multiclass"          # or "binary"
+binary_mapping: "c0_vs_rest"     # only used if task_type == binary

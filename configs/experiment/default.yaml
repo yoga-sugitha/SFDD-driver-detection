@@ -1,0 +1,3 @@
+id: exp_${now:%Y%m%d_%H%M%S} 
+seed: 42
+tags: ["resnet", "sfdd", "driver-state"]
