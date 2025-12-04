@@ -4,11 +4,7 @@ Model factory for creating different architectures
 import torch.nn as nn
 from typing import Dict, Any
 from .resnet import ResNet
-from .pretrained import (
-    create_pretrained_resnet, 
-    create_pretrained_resnet34, 
-    create_pretrained_resnet50
-)
+from .pretrained import create_pretrained_resnet
 
 def create_model(model_name: str, model_hparams: Dict[str, Any]) -> nn.Module:
     """
@@ -26,9 +22,7 @@ def create_model(model_name: str, model_hparams: Dict[str, Any]) -> nn.Module:
     """
     model_registry = {
         "resnet_scratch": ResNet,
-        "resnet18_pretrained": create_pretrained_resnet,
-        "resnet34_pretrained": create_pretrained_resnet34,
-        "resnet50_pretrained": create_pretrained_resnet50,
+        "resnet18": create_pretrained_resnet,
     }
     
     if model_name not in model_registry:
