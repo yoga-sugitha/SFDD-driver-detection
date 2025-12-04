@@ -1,17 +1,10 @@
-# @package _global_
+# configs/config.yaml
 defaults:
-  data: sfdd
-  model: resnet
-  optimizer: adam        # or sgd — can override on CLI
-  training: default
-  logging: wandb_offline
-  experiment: default
-  _self_                 # allows overriding in CLI
-
-# Hydra-specific settings (optional)
-hydra:
-  run:
-    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}_${experiment.id}
-  job:
-    chdir: True
-
+  - data: sfdd
+  - model: resnet
+  - optimizer: adam
+  - training: default
+  - logging: wandb_offline
+  - experiment: default
+  - xai: default
+  - _self_
