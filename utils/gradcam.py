@@ -222,8 +222,8 @@ def collect_samples_across_batches(
     model: L.LightningModule,
     dataloader,
     device,
-    num_correct_needed: int = 3,
-    num_incorrect_needed: int = 3,
+    num_correct_needed: int = 2,
+    num_incorrect_needed: int = 2,
     max_batches: int = 50  # Increased default
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """
@@ -234,8 +234,8 @@ def collect_samples_across_batches(
         model: Lightning module
         dataloader: Data loader
         device: Device to use
-        num_correct_needed: Number of correct predictions needed
-        num_incorrect_needed: Number of incorrect predictions needed
+        num_correct_needed: Number of correct predictions needed (default: 2)
+        num_incorrect_needed: Number of incorrect predictions needed (default: 2)
         max_batches: Maximum batches to search through
         
     Returns:
@@ -350,6 +350,31 @@ def collect_samples_across_batches(
     # Combine selected indices (correct first, then incorrect)
     selected_indices = torch.tensor(correct_samples + incorrect_samples, dtype=torch.long)
     
+    # TRIPLE CHECK: Verify the indices are actually correct/incorrect
+    print(f"\n🔍 VERIFICATION CHECK:")
+    actual_correct_in_selection = 0
+    actual_incorrect_in_selection = 0
+    
+    for idx in selected_indices[:num_correct_needed]:
+        if all_predictions[idx] == all_labels[idx]:
+            actual_correct_in_selection += 1
+    
+    for idx in selected_indices[num_correct_needed:]:
+        if all_predictions[idx] != all_labels[idx]:
+            actual_incorrect_in_selection += 1
+    
+    print(f"   First {num_correct_needed} indices are correct: {actual_correct_in_selection}/{num_correct_needed}")
+    print(f"   Last {num_incorrect_needed} indices are incorrect: {actual_incorrect_in_selection}/{num_incorrect_needed}")
+    
+    if actual_correct_in_selection != num_correct_needed:
+        raise RuntimeError(f"Selection error: Expected {num_correct_needed} correct but got {actual_correct_in_selection}")
+    
+    if actual_incorrect_in_selection != num_incorrect_needed:
+        raise RuntimeError(f"Selection error: Expected {num_incorrect_needed} incorrect but got {actual_incorrect_in_selection}")
+    
+    print(f"   ✅ Verification passed!")
+    print("="*60)
+    
     return all_images, all_labels, all_predictions, selected_indices
 
 
@@ -358,8 +383,8 @@ def generate_gradcam_visualizations(
     data_module: L.LightningDataModule,
     logger: WandbLogger,
     class_names: List[str],
-    num_correct: int = 3,
-    num_incorrect: int = 3,
+    num_correct: int = 2,
+    num_incorrect: int = 2,
     max_batches: int = 50,
     inspect_architecture: bool = False
 ):
@@ -372,8 +397,8 @@ def generate_gradcam_visualizations(
         data_module: Data module with test set
         logger: WandB logger for logging visualizations
         class_names: List of class names
-        num_correct: Number of correct predictions (default: 3)
-        num_incorrect: Number of incorrect predictions (default: 3)
+        num_correct: Number of correct predictions (default: 2)
+        num_incorrect: Number of incorrect predictions (default: 2)
         max_batches: Maximum batches to search (default: 50)
         inspect_architecture: If True, print detailed model architecture
         
@@ -425,15 +450,23 @@ def generate_gradcam_visualizations(
         return
     
     print(f"\n✓ Processing {len(selected_indices)} samples (EXACTLY as requested)")
+    print(f"   Expected: First {num_correct} are CORRECT, Last {num_incorrect} are INCORRECT")
     print("="*60)
     
     gradcam_images = []
-    successful_correct = 0
-    successful_incorrect = 0
+    
+    # Track counts separately for correct and incorrect sections
+    section_1_correct_count = 0  # Should be num_correct
+    section_1_incorrect_count = 0  # Should be 0
+    section_2_correct_count = 0  # Should be 0
+    section_2_incorrect_count = 0  # Should be num_incorrect
     
     # Process each selected sample
     for sample_num, idx in enumerate(selected_indices, 1):
         idx_item = idx.item()
+        
+        # Determine which section we're in
+        in_correct_section = (sample_num <= num_correct)
         
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -494,10 +527,19 @@ def generate_gradcam_visualizations(
             color = "green" if is_correct else "red"
             status = "✓ CORRECT" if is_correct else "✗ INCORRECT"
             
-            if is_correct:
-                successful_correct += 1
+            # Track which section this belongs to
+            if in_correct_section:
+                if is_correct:
+                    section_1_correct_count += 1
+                else:
+                    section_1_incorrect_count += 1
+                    print(f"\n  ⚠️  WARNING: Sample {sample_num} in CORRECT section but is INCORRECT!")
             else:
-                successful_incorrect += 1
+                if is_correct:
+                    section_2_correct_count += 1
+                    print(f"\n  ⚠️  WARNING: Sample {sample_num} in INCORRECT section but is CORRECT!")
+                else:
+                    section_2_incorrect_count += 1
             
             fig.suptitle(
                 f"{status} | True: {true_label} | Predicted: {pred_label}", 
@@ -519,16 +561,35 @@ def generate_gradcam_visualizations(
             plt.close('all')
             continue
     
+    # Calculate final totals
+    total_correct = section_1_correct_count + section_2_correct_count
+    total_incorrect = section_1_incorrect_count + section_2_incorrect_count
+    
     # Verify final counts match request
     print("\n" + "="*60)
     print("✅ GradCAM Generation Complete!")
     print("="*60)
     print(f"  Requested:  {num_correct} correct + {num_incorrect} incorrect = {num_correct + num_incorrect} total")
-    print(f"  Generated:  {successful_correct} correct + {successful_incorrect} incorrect = {len(gradcam_images)} total")
+    print(f"  Generated:  {total_correct} correct + {total_incorrect} incorrect = {len(gradcam_images)} total")
+    print(f"\n  Section breakdown:")
+    print(f"    Correct section (samples 1-{num_correct}):")
+    print(f"      ✓ Correct: {section_1_correct_count}/{num_correct}")
+    print(f"      ✗ Incorrect: {section_1_incorrect_count}/0 {('⚠️ UNEXPECTED!' if section_1_incorrect_count > 0 else '')}")
+    print(f"    Incorrect section (samples {num_correct+1}-{num_correct+num_incorrect}):")
+    print(f"      ✓ Correct: {section_2_correct_count}/0 {('⚠️ UNEXPECTED!' if section_2_correct_count > 0 else '')}")
+    print(f"      ✗ Incorrect: {section_2_incorrect_count}/{num_incorrect}")
     
-    if successful_correct != num_correct or successful_incorrect != num_incorrect:
-        print(f"\n  ⚠ WARNING: Some visualizations failed during generation!")
-        print(f"     This is usually due to gradient computation errors.")
+    if total_correct != num_correct or total_incorrect != num_incorrect:
+        print(f"\n  ❌ ERROR: Final counts don't match request!")
+        print(f"     Expected {num_correct} correct + {num_incorrect} incorrect")
+        print(f"     Got {total_correct} correct + {total_incorrect} incorrect")
+        print(f"\n     This indicates a bug in sample selection. Please report this issue.")
+    elif section_1_incorrect_count > 0 or section_2_correct_count > 0:
+        print(f"\n  ⚠️  WARNING: Samples are in wrong sections!")
+        print(f"     Some correct samples in incorrect section or vice versa")
+        print(f"     This is a BUG - selection logic failed")
+    else:
+        print(f"\n  ✅ Perfect: All samples in correct sections with correct labels!")
     
     print("="*60 + "\n")
     
@@ -537,10 +598,14 @@ def generate_gradcam_visualizations(
         logger.experiment.log({
             "test/gradcam_samples": gradcam_images,
             "test/gradcam_total": len(gradcam_images),
-            "test/gradcam_correct": successful_correct,
-            "test/gradcam_incorrect": successful_incorrect,
+            "test/gradcam_correct": total_correct,
+            "test/gradcam_incorrect": total_incorrect,
             "test/gradcam_requested_correct": num_correct,
-            "test/gradcam_requested_incorrect": num_incorrect
+            "test/gradcam_requested_incorrect": num_incorrect,
+            "test/gradcam_section1_correct": section_1_correct_count,
+            "test/gradcam_section1_incorrect": section_1_incorrect_count,
+            "test/gradcam_section2_correct": section_2_correct_count,
+            "test/gradcam_section2_incorrect": section_2_incorrect_count
         })
     else:
         print("\n⚠ No GradCAM visualizations generated")
