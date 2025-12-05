@@ -1,3 +1,4 @@
-id: exp_${now:%Y%m%d-%H%M%S} 
+id: ${now:%Y%m%d-%H%M%S}
+dataset_name: SFDD
 seed: 42
 tags: ["resnet", "sfdd", "driver-state"]

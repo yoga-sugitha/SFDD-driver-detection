@@ -68,7 +68,7 @@ def train(cfg: DictConfig):
     # set seed
     L.seed_everything(cfg.experiment.seed)
 
-    experiment_name = f"{cfg.experiment.id}_{cfg.model.name}_{cfg.data.task_type}_{cfg.optimizer.name}"
+    experiment_name = f"{cfg.model.name}_{cfg.experiment.dataset_name}_{cfg.data.task_type}_{cfg.optimizer.name}_{cfg.experiment.seed}_{cfg.experiment.id}"
     print(f"Starting Experiment: {experiment_name}\n")
     logger = setup_logger(cfg, experiment_name)
 
