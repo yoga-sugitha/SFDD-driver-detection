@@ -1,32 +1,8 @@
 # SFDD-driver-detection
 # SFDD Driver Detection Project
 
-A well-structured deep learning project for State Farm Distracted Driver Detection using PyTorch Lightning.
+A well-structured deep learning project for State Farm Distracted Driver Detection using PyTorch Lightning and Hydra.
 
-## Project Structure
-
-```
-sfdd_driver_detection/
-├── configs/                    # Configuration files
-│   ├── base_config.py         # Base configuration classes
-│   └── experiment_configs.py  # Experiment-specific configs
-├── data/                       # Data handling
-│   ├── dataset.py             # Custom dataset classes
-│   └── datamodule.py          # Lightning DataModule
-├── models/                     # Model architectures
-│   ├── resnet.py              # ResNet from scratch
-│   ├── pretrained.py          # Pretrained models
-│   └── factory.py             # Model factory pattern
-├── modules/                    # Training modules
-│   └── lightning_module.py    # Lightning training module
-├── utils/                      # Utility functions
-│   ├── metrics.py             # Performance metrics
-│   ├── visualization.py       # Plotting utilities
-│   └── gradcam.py             # GradCAM implementation
-├── train.py                    # Main training script
-├── requirements.txt            # Dependencies
-└── README.md                   # This file
-```
 
 ## Features
 
@@ -57,89 +33,23 @@ pip install -r requirements.txt
 Run a single experiment:
 
 ```bash
-python train.py --exp_id exp001_resnet18_pretrained --max_epochs 30
+python main.py 
 ```
 
-### Run All Experiments
+### Run Multiple Experiments
 
 ```bash
-python train.py --run_all --max_epochs 30
+python main.py -m \
+    data.task_type=binary,multiclass \
+    model=resnet_scratch,resnet \
+    training=epoch30
 ```
 
-### With WandB Logging
-
-```bash
-python train.py --exp_id exp001_resnet18_pretrained --enable_wandb
-```
-
-### Custom Data Path
-
-```bash
-python train.py \
-  --exp_id exp001_resnet18_pretrained \
-  --data_dir /path/to/your/data \
-  --max_epochs 30
-```
 
 ## Available Experiments
 
 1. **exp001_resnet18_pretrained**: ResNet18 pretrained on ImageNet
 2. **exp002_resnet_scratch**: ResNet trained from scratch (small)
-3. **exp003_resnet_scratch_deep**: Deeper ResNet from scratch
-4. **exp004_sgd_momentum**: ResNet18 with SGD optimizer
-
-## Configuration
-
-Configurations are defined in `configs/experiment_configs.py`. You can:
-
-- Modify existing experiments
-- Add new experiment configurations
-- Customize data augmentation
-- Adjust training hyperparameters
-
-Example configuration:
-
-```python
-Config(
-    model=ModelConfig(
-        model_name="resnet18_pretrained",
-        num_classes=10
-    ),
-    optimizer=OptimizerConfig(
-        name="Adam",
-        lr=1e-3,
-        weight_decay=1e-4
-    ),
-    training=TrainingConfig(
-        max_epochs=30,
-        early_stopping_patience=15
-    ),
-    xai=XAIConfig(enable_xai=True)
-)
-```
-
-## For Kaggle Notebooks
-
-### Convert to Notebook Cells
-
-If you need to run in Kaggle notebook, you can create cells like:
-
-```python
-# Cell 1: Install dependencies
-!pip install --quiet lightning wandb ptflops
-
-# Cell 2: Import and setup
-from train import run_experiment
-from configs.experiment_configs import get_experiment_config
-
-# Cell 3: Run experiment
-config = get_experiment_config("exp001_resnet18_pretrained")
-config.data.data_dir = "/kaggle/input/state-farm-distracted-driver-detection/imgs/train"
-config.data.num_workers = 0  # Important for Kaggle
-config.logging.enable_wandb = False  # Use CSV logger
-
-run_experiment(config, "exp001_resnet18_pretrained")
-```
 
 ### Memory Management Tips for Kaggle
 
@@ -178,7 +88,7 @@ logs/
 
 1. Create model in `models/` directory
 2. Register in `models/factory.py`
-3. Add configuration in `configs/experiment_configs.py`
+3. Add configuration in `configs`
 
 ### Add Custom Metrics
 
