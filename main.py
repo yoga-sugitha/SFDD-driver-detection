@@ -169,6 +169,8 @@ def train(cfg: DictConfig):
     print("\n" + "="*70)
     print("Loading best checkpoint for evaluation...")
     print("="*70)
+    
+    # Load checkpoint to CPU first to avoid device conflicts
     best_model = ResNetModule.load_from_checkpoint(
         trainer.checkpoint_callback.best_model_path,
         model_name=cfg.model.name,
@@ -176,6 +178,7 @@ def train(cfg: DictConfig):
         optimizer_name=cfg.optimizer.name,
         optimizer_hparams=optimizer_hparams,
         class_names=class_names,
+        map_location='cpu'  # Load to CPU first
     )
     best_model.eval()
     
@@ -196,8 +199,11 @@ def train(cfg: DictConfig):
     print(f"\n{'='*70}")
     print("Evaluating Model Complexity...")
     print(f"{'='*70}\n")
+    
+    # Move model to GPU for complexity computation
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     complexity_metrics = compute_model_complexity(
-        best_model.model,
+        best_model.model.to(device),
         input_size=(3, cfg.data.img_size, cfg.data.img_size)
     )
     
