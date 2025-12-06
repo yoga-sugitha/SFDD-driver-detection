@@ -1,620 +1,134 @@
-"""
-GradCAM with GUARANTEED exact counts of correct + incorrect predictions
-Fixed version that properly handles insufficient samples
-"""
+# utils/gradcam_fast.py
+
 import torch
-import torch.nn as nn
 import matplotlib.pyplot as plt
-import lightning as L
-from lightning.pytorch.loggers import WandbLogger
-from typing import List, Optional, Tuple
 import wandb
+import lightning as L
+from typing import List
+from models.gradcam import GradCAMHelper  # assuming your GradCAMHelper is in models/gradcam.py or utils/gradcam.py
 
-
-def find_target_layer(model: nn.Module, verbose: bool = True) -> Optional[nn.Module]:
-    """
-    Automatically find the best layer for GradCAM in any model.
-    
-    Strategy:
-    1. Look for common layer names (layer4, features, backbone)
-    2. Find the last convolutional block before classifier
-    3. Search recursively through model structure
-    
-    Args:
-        model: PyTorch model
-        verbose: Print search information
-        
-    Returns:
-        Target layer for GradCAM or None if not found
-    """
-    if verbose:
-        print("\n" + "="*60)
-        print("Searching for GradCAM target layer...")
-        print("="*60)
-    
-    # Strategy 1: Check common names (ResNet, VGG, etc.)
-    common_names = ['layer4', 'layer3', 'features', 'backbone', 'blocks']
-    
-    for name in common_names:
-        if hasattr(model, name):
-            target = getattr(model, name)
-            if verbose:
-                print(f"✓ Found layer by name: '{name}'")
-                print(f"  Type: {type(target)}")
-            return target
-    
-    # Strategy 2: Find last convolutional sequence
-    last_conv_module = None
-    last_conv_name = None
-    
-    def find_last_conv(module, prefix=''):
-        nonlocal last_conv_module, last_conv_name
-        
-        for name, child in module.named_children():
-            full_name = f"{prefix}.{name}" if prefix else name
-            
-            # Check if this module or its children contain Conv2d
-            has_conv = any(isinstance(m, nn.Conv2d) for m in child.modules())
-            
-            if has_conv:
-                # Don't include classifier/fc layers
-                if 'fc' not in name.lower() and 'classifier' not in name.lower():
-                    last_conv_module = child
-                    last_conv_name = full_name
-            
-            # Recurse
-            find_last_conv(child, full_name)
-    
-    find_last_conv(model)
-    
-    if last_conv_module is not None:
-        if verbose:
-            print(f"✓ Found last convolutional block: '{last_conv_name}'")
-            print(f"  Type: {type(last_conv_module)}")
-        return last_conv_module
-    
-    # Strategy 3: Get all modules and find last Conv2d
-    all_modules = list(model.modules())
-    for module in reversed(all_modules):
-        if isinstance(module, nn.Conv2d):
-            if verbose:
-                print(f"✓ Found last Conv2d layer")
-                print(f"  Type: {type(module)}")
-            return module
-    
-    if verbose:
-        print("✗ Could not find suitable layer for GradCAM")
-        print("\nModel structure:")
-        print(model)
-    
-    return None
-
-
-def inspect_model_architecture(model: nn.Module) -> dict:
-    """
-    Inspect model architecture to understand its structure.
-    Useful for debugging and finding the right layer.
-    
-    Args:
-        model: PyTorch model
-        
-    Returns:
-        Dictionary with architecture information
-    """
-    info = {
-        "total_layers": 0,
-        "conv_layers": [],
-        "sequential_blocks": [],
-        "named_modules": {}
-    }
-    
-    print("\n" + "="*60)
-    print("MODEL ARCHITECTURE INSPECTION")
-    print("="*60)
-    
-    # Count and list all layers
-    for name, module in model.named_modules():
-        if name:  # Skip root
-            info["named_modules"][name] = type(module).__name__
-            info["total_layers"] += 1
-            
-            if isinstance(module, nn.Conv2d):
-                info["conv_layers"].append(name)
-            elif isinstance(module, nn.Sequential):
-                info["sequential_blocks"].append(name)
-    
-    # Print summary
-    print(f"\nTotal modules: {info['total_layers']}")
-    print(f"Conv2d layers: {len(info['conv_layers'])}")
-    print(f"Sequential blocks: {len(info['sequential_blocks'])}")
-    
-    # Print first-level children (main structure)
-    print("\n" + "-"*60)
-    print("First-level structure:")
-    print("-"*60)
-    for name, child in model.named_children():
-        has_conv = sum(1 for m in child.modules() if isinstance(m, nn.Conv2d))
-        print(f"  {name:20s} | {type(child).__name__:25s} | Conv2d: {has_conv}")
-    
-    # Print last few conv layers (most relevant for GradCAM)
-    if info["conv_layers"]:
-        print("\n" + "-"*60)
-        print("Last 5 Conv2d layers (best for GradCAM):")
-        print("-"*60)
-        for name in info["conv_layers"][-5:]:
-            print(f"  {name}")
-    
-    # Suggest best layers
-    print("\n" + "-"*60)
-    print("Recommended layers for GradCAM:")
-    print("-"*60)
-    
-    suggestions = []
-    for name in ['layer4', 'layer3', 'blocks', 'features']:
-        if name in info["named_modules"]:
-            suggestions.append(name)
-    
-    if suggestions:
-        for s in suggestions:
-            print(f"  ✓ {s}")
-    else:
-        if info["sequential_blocks"]:
-            print(f"  ⚠ Try: {info['sequential_blocks'][-1]}")
-        elif info["conv_layers"]:
-            print(f"  ⚠ Try: {info['conv_layers'][-1]}")
-    
-    print("="*60 + "\n")
-    
-    return info
-
-
-class GradCAMHelper:
-    """GradCAM helper with automatic layer detection"""
-    def __init__(self, model: nn.Module, target_layer: Optional[nn.Module] = None):
-        self.model = model
-        
-        # Auto-detect target layer if not provided
-        if target_layer is None:
-            target_layer = find_target_layer(model)
-            if target_layer is None:
-                raise ValueError(
-                    "Could not automatically find target layer. "
-                    "Please specify target_layer manually or inspect model with "
-                    "inspect_model_architecture(model)"
-                )
-        
-        self.target_layer = target_layer
-        self.features = None
-        self.gradients = None
-        self.hooks = []
-        self._register_hooks()
-    
-    def _register_hooks(self):
-        def forward_hook(module, input, output):
-            self.features = output.detach()
-        
-        def backward_hook(module, grad_in, grad_out):
-            self.gradients = grad_out[0].detach()
-        
-        fwd_hook = self.target_layer.register_forward_hook(forward_hook)
-        bwd_hook = self.target_layer.register_full_backward_hook(backward_hook)
-        self.hooks = [fwd_hook, bwd_hook]
-    
-    def generate_cam(self, class_idx: int) -> torch.Tensor:
-        if self.gradients is None or self.features is None:
-            raise RuntimeError("Forward and backward passes must be completed first")
-        
-        weights = torch.mean(self.gradients[class_idx], dim=[1, 2], keepdim=True)
-        cam = torch.relu((weights * self.features[class_idx]).sum(dim=0))
-        
-        if cam.max() > 0:
-            cam = (cam - cam.min()) / (cam.max() - cam.min() + 1e-8)
-        
-        return cam
-    
-    def cleanup(self):
-        for hook in self.hooks:
-            hook.remove()
-        self.hooks.clear()
-
-
-def collect_samples_across_batches(
+def generate_gradcam_from_cached_predictions(
     model: L.LightningModule,
-    dataloader,
-    device,
-    num_correct_needed: int = 2,
-    num_incorrect_needed: int = 2,
-    max_batches: int = 50  # Increased default
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """
-    Collect samples across multiple batches to GUARANTEE we have EXACTLY
-    the requested number of correct and incorrect predictions.
-    
-    Args:
-        model: Lightning module
-        dataloader: Data loader
-        device: Device to use
-        num_correct_needed: Number of correct predictions needed (default: 2)
-        num_incorrect_needed: Number of incorrect predictions needed (default: 2)
-        max_batches: Maximum batches to search through
-        
-    Returns:
-        Tuple of (images, labels, predictions, selected_indices)
-        
-    Raises:
-        RuntimeError: If insufficient samples found after max_batches
-    """
-    print("\n" + "="*60)
-    print("Collecting samples across batches...")
-    print(f"Target: {num_correct_needed} correct + {num_incorrect_needed} incorrect")
-    print("="*60)
-    
-    all_images = []
-    all_labels = []
-    all_predictions = []
-    
-    correct_samples = []
-    incorrect_samples = []
-    
-    model.eval()
-    
-    with torch.no_grad():
-        for batch_idx, (x, y) in enumerate(dataloader):
-            if batch_idx >= max_batches:
-                break
-            
-            x = x.to(device)
-            y = y.to(device)
-            
-            preds = model(x).argmax(dim=1)
-            
-            # Store all data
-            batch_start_idx = len(all_images)
-            all_images.append(x)
-            all_labels.append(y)
-            all_predictions.append(preds)
-            
-            # Find correct and incorrect in this batch
-            for i in range(len(x)):
-                global_idx = batch_start_idx + i
-                
-                if preds[i] == y[i]:
-                    if len(correct_samples) < num_correct_needed:
-                        correct_samples.append(global_idx)
-                else:
-                    if len(incorrect_samples) < num_incorrect_needed:
-                        incorrect_samples.append(global_idx)
-            
-            # Check if we have enough
-            if len(correct_samples) >= num_correct_needed and len(incorrect_samples) >= num_incorrect_needed:
-                print(f"\n✓ Found enough samples after {batch_idx + 1} batches")
-                break
-            
-            print(f"  Batch {batch_idx + 1}: Correct={len(correct_samples)}/{num_correct_needed}, "
-                  f"Incorrect={len(incorrect_samples)}/{num_incorrect_needed}")
-    
-    # Concatenate all collected data
-    all_images = torch.cat(all_images, dim=0)
-    all_labels = torch.cat(all_labels, dim=0)
-    all_predictions = torch.cat(all_predictions, dim=0)
-    
-    # Final check
-    actual_correct = len(correct_samples)
-    actual_incorrect = len(incorrect_samples)
-    
-    print(f"\n" + "-"*60)
-    print(f"Collection Summary:")
-    print(f"  Total samples processed: {len(all_images)}")
-    print(f"  Correct samples found: {actual_correct}/{num_correct_needed}")
-    print(f"  Incorrect samples found: {actual_incorrect}/{num_incorrect_needed}")
-    print("-"*60)
-    
-    # CRITICAL FIX: Ensure we have EXACTLY what was requested
-    if actual_correct < num_correct_needed:
-        error_msg = (
-            f"\n❌ INSUFFICIENT CORRECT PREDICTIONS!\n"
-            f"   Requested: {num_correct_needed}, Found: {actual_correct}\n"
-            f"   Searched through {len(all_images)} samples in {batch_idx + 1} batches.\n\n"
-            f"   Possible solutions:\n"
-            f"   1. Increase max_batches (current: {max_batches})\n"
-            f"   2. Reduce num_correct (model accuracy may be too low)\n"
-            f"   3. Use a larger test dataset\n"
-            f"   4. Check if model is trained properly"
-        )
-        raise RuntimeError(error_msg)
-    
-    if actual_incorrect < num_incorrect_needed:
-        error_msg = (
-            f"\n❌ INSUFFICIENT INCORRECT PREDICTIONS!\n"
-            f"   Requested: {num_incorrect_needed}, Found: {actual_incorrect}\n"
-            f"   Searched through {len(all_images)} samples in {batch_idx + 1} batches.\n\n"
-            f"   This usually means your model is very accurate (good news!).\n\n"
-            f"   Possible solutions:\n"
-            f"   1. Increase max_batches (current: {max_batches})\n"
-            f"   2. Reduce num_incorrect to {actual_incorrect} or less\n"
-            f"   3. Use a larger test dataset\n"
-            f"   4. Accept that your model is performing well!"
-        )
-        raise RuntimeError(error_msg)
-    
-    # Take EXACTLY the requested amounts
-    correct_samples = correct_samples[:num_correct_needed]
-    incorrect_samples = incorrect_samples[:num_incorrect_needed]
-    
-    print(f"\n✅ GUARANTEED SELECTION:")
-    print(f"   Correct predictions: {len(correct_samples)} (requested: {num_correct_needed})")
-    print(f"   Incorrect predictions: {len(incorrect_samples)} (requested: {num_incorrect_needed})")
-    print(f"   Total: {len(correct_samples) + len(incorrect_samples)}")
-    print("="*60)
-    
-    # Combine selected indices (correct first, then incorrect)
-    selected_indices = torch.tensor(correct_samples + incorrect_samples, dtype=torch.long)
-    
-    # TRIPLE CHECK: Verify the indices are actually correct/incorrect
-    print(f"\n🔍 VERIFICATION CHECK:")
-    actual_correct_in_selection = 0
-    actual_incorrect_in_selection = 0
-    
-    for idx in selected_indices[:num_correct_needed]:
-        if all_predictions[idx] == all_labels[idx]:
-            actual_correct_in_selection += 1
-    
-    for idx in selected_indices[num_correct_needed:]:
-        if all_predictions[idx] != all_labels[idx]:
-            actual_incorrect_in_selection += 1
-    
-    print(f"   First {num_correct_needed} indices are correct: {actual_correct_in_selection}/{num_correct_needed}")
-    print(f"   Last {num_incorrect_needed} indices are incorrect: {actual_incorrect_in_selection}/{num_incorrect_needed}")
-    
-    if actual_correct_in_selection != num_correct_needed:
-        raise RuntimeError(f"Selection error: Expected {num_correct_needed} correct but got {actual_correct_in_selection}")
-    
-    if actual_incorrect_in_selection != num_incorrect_needed:
-        raise RuntimeError(f"Selection error: Expected {num_incorrect_needed} incorrect but got {actual_incorrect_in_selection}")
-    
-    print(f"   ✅ Verification passed!")
-    print("="*60)
-    
-    return all_images, all_labels, all_predictions, selected_indices
-
-
-def generate_gradcam_visualizations(
-    model: L.LightningModule,
-    data_module: L.LightningDataModule,
-    logger: WandbLogger,
+    data_module,
+    logger,
     class_names: List[str],
+    all_test_preds: torch.Tensor,
+    all_test_targets: torch.Tensor,
     num_correct: int = 2,
     num_incorrect: int = 2,
-    max_batches: int = 50,
     inspect_architecture: bool = False
 ):
     """
-    Generate GradCAM visualizations with GUARANTEED exact counts.
-    Will raise an error if insufficient samples are found.
-    
-    Args:
-        model: Trained Lightning module
-        data_module: Data module with test set
-        logger: WandB logger for logging visualizations
-        class_names: List of class names
-        num_correct: Number of correct predictions (default: 2)
-        num_incorrect: Number of incorrect predictions (default: 2)
-        max_batches: Maximum batches to search (default: 50)
-        inspect_architecture: If True, print detailed model architecture
-        
-    Raises:
-        RuntimeError: If insufficient correct or incorrect samples found
+    Generate GradCAM on pre-identified correct/incorrect samples.
+    Uses predictions from test loop — NO extra inference over full test set.
     """
-    if not isinstance(logger, WandbLogger):
-        print("⚠ GradCAM requires WandB logger")
+    if not hasattr(logger, 'experiment'):
+        print("⚠ Skipping GradCAM: logger not compatible")
         return
-    
-    print("\n" + "="*60)
-    print("Generating GradCAM Visualizations")
-    print(f"Guaranteed: {num_correct} correct + {num_incorrect} incorrect")
-    print("="*60)
-    
+
     device = next(model.parameters()).device
-    
-    # Optional: Inspect architecture
+    model.eval()
+
+    # Identify correct/incorrect indices
+    correct_mask = (all_test_preds == all_test_targets)
+    incorrect_mask = ~correct_mask
+
+    correct_indices = torch.where(correct_mask)[0]
+    incorrect_indices = torch.where(incorrect_mask)[0]
+
+    if len(correct_indices) < num_correct:
+        print(f"⚠ Only {len(correct_indices)} correct samples found. Using all available.")
+        num_correct = len(correct_indices)
+    if len(incorrect_indices) < num_incorrect:
+        print(f"⚠ Only {len(incorrect_indices)} incorrect samples found. Using all available.")
+        num_incorrect = len(incorrect_indices)
+
+    if num_correct == 0 and num_incorrect == 0:
+        print("⚠ No samples to visualize for GradCAM")
+        return
+
+    selected_indices = torch.cat([
+        correct_indices[:num_correct],
+        incorrect_indices[:num_incorrect]
+    ]).cpu().tolist()
+
+    # Optional: inspect model
     if inspect_architecture:
+        from models.gradcam import inspect_model_architecture  # or wherever it lives
         inspect_model_architecture(model.model)
-    
-    # Setup GradCAM helper (auto-detect target layer)
+
+    # Initialize GradCAM
     try:
-        gradcam_helper = GradCAMHelper(model.model, target_layer=None)
-        print(f"✓ GradCAM helper initialized with target layer: {type(gradcam_helper.target_layer).__name__}")
-    except ValueError as e:
-        print(f"\n✗ Error: {e}")
-        print("\nTry running with inspect_architecture=True:")
-        print("  generate_gradcam_visualizations(..., inspect_architecture=True)")
+        gradcam = GradCAMHelper(model.model)
+    except Exception as e:
+        print(f"⚠ GradCAM init failed: {e}")
         return
-    
-    # Setup data
-    data_module.setup(stage="test")
-    test_loader = data_module.test_dataloader()
-    
-    # Collect samples - will raise error if insufficient samples
-    try:
-        all_images, all_labels, all_predictions, selected_indices = collect_samples_across_batches(
-            model=model,
-            dataloader=test_loader,
-            device=device,
-            num_correct_needed=num_correct,
-            num_incorrect_needed=num_incorrect,
-            max_batches=max_batches
-        )
-    except RuntimeError as e:
-        print(f"\n{e}")
-        gradcam_helper.cleanup()
-        return
-    
-    print(f"\n✓ Processing {len(selected_indices)} samples (EXACTLY as requested)")
-    print(f"   Expected: First {num_correct} are CORRECT, Last {num_incorrect} are INCORRECT")
-    print("="*60)
-    
+
     gradcam_images = []
-    
-    # Track counts separately for correct and incorrect sections
-    section_1_correct_count = 0  # Should be num_correct
-    section_1_incorrect_count = 0  # Should be 0
-    section_2_correct_count = 0  # Should be 0
-    section_2_incorrect_count = 0  # Should be num_incorrect
-    
-    # Process each selected sample
-    for sample_num, idx in enumerate(selected_indices, 1):
-        idx_item = idx.item()
-        
-        # Determine which section we're in
-        in_correct_section = (sample_num <= num_correct)
-        
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        
+
+    for i, idx in enumerate(selected_indices):
         try:
-            # Enable gradients for this sample
-            with torch.set_grad_enabled(True):
-                x_sample = all_images[idx_item:idx_item+1].clone().detach()
-                x_sample.requires_grad_(True)
-                
-                model.model.zero_grad()
-                if x_sample.grad is not None:
-                    x_sample.grad.zero_()
-                
-                preds_sample = model(x_sample)
-                target_class = all_predictions[idx_item]
-                score = preds_sample[0, target_class]
-                
-                score.backward()
-            
+            # Load single image
+            img, label = data_module.get_test_sample(idx)
+            img = img.unsqueeze(0).to(device)  # Add batch dim
+            label = torch.tensor(label).to(device)
+            pred = all_test_preds[idx].to(device)
+
+            # Enable gradients
+            img.requires_grad_(True)
+            model.model.zero_grad()
+
+            # Forward + backward
+            output = model(img)
+            score = output[0, pred]
+            score.backward()
+
             # Generate CAM
-            cam = gradcam_helper.generate_cam(0)
-            cam = cam.unsqueeze(0).unsqueeze(0)
-            cam = nn.functional.interpolate(
-                cam, size=all_images.shape[-2:], 
-                mode='bilinear', align_corners=False
-            ).squeeze()
-            
-            # Visualize
-            img = all_images[idx_item].cpu().detach()
-            
-            # Denormalize
+            cam = gradcam.generate_cam(0).cpu()
+
+            # Denormalize for visualization
             mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
             std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
-            img = img * std + mean
-            img = torch.clamp(img, 0, 1)
-            
-            # Create figure
+            img_vis = img[0].cpu() * std + mean
+            img_vis = torch.clamp(img_vis, 0, 1)
+
+            # Plot
             fig, axes = plt.subplots(1, 3, figsize=(12, 4))
-            
-            axes[0].imshow(img.permute(1, 2, 0).numpy())
-            axes[0].set_title("Original", fontsize=12)
-            axes[0].axis("off")
-            
-            axes[1].imshow(cam.cpu().numpy(), cmap='jet')
-            axes[1].set_title("GradCAM Heatmap", fontsize=12)
-            axes[1].axis("off")
-            
-            axes[2].imshow(img.permute(1, 2, 0).numpy())
-            axes[2].imshow(cam.cpu().numpy(), cmap='jet', alpha=0.5)
-            axes[2].set_title("Overlay", fontsize=12)
-            axes[2].axis("off")
-            
-            # Labels
-            true_label = class_names[all_labels[idx_item].item()]
-            pred_label = class_names[all_predictions[idx_item].item()]
-            is_correct = (all_labels[idx_item] == all_predictions[idx_item]).item()
-            color = "green" if is_correct else "red"
+            axes[0].imshow(img_vis.permute(1, 2, 0))
+            axes[1].imshow(cam, cmap='jet')
+            axes[2].imshow(img_vis.permute(1, 2, 0))
+            axes[2].imshow(cam, cmap='jet', alpha=0.5)
+
+            true_name = class_names[label.item()]
+            pred_name = class_names[pred.item()]
+            is_correct = (pred == label).item()
             status = "✓ CORRECT" if is_correct else "✗ INCORRECT"
-            
-            # Track which section this belongs to
-            if in_correct_section:
-                if is_correct:
-                    section_1_correct_count += 1
-                else:
-                    section_1_incorrect_count += 1
-                    print(f"\n  ⚠️  WARNING: Sample {sample_num} in CORRECT section but is INCORRECT!")
-            else:
-                if is_correct:
-                    section_2_correct_count += 1
-                    print(f"\n  ⚠️  WARNING: Sample {sample_num} in INCORRECT section but is CORRECT!")
-                else:
-                    section_2_incorrect_count += 1
-            
-            fig.suptitle(
-                f"{status} | True: {true_label} | Predicted: {pred_label}", 
-                color=color, fontsize=14, fontweight='bold'
-            )
+            color = "green" if is_correct else "red"
+
+            fig.suptitle(f"{status} | True: {true_name} | Pred: {pred_name}", color=color, fontweight='bold')
+            for ax in axes:
+                ax.axis('off')
             plt.tight_layout()
-            
+
             gradcam_images.append(wandb.Image(fig))
-            
             plt.close(fig)
-            plt.close('all')
-            
-            del x_sample, preds_sample, score, cam, img
-            
-            print(f"  [{sample_num}/{len(selected_indices)}] ✓ {status:15s} | True: {true_label:20s} | Pred: {pred_label}")
-            
+
         except Exception as e:
-            print(f"  [{sample_num}/{len(selected_indices)}] ✗ Failed: {e}")
+            print(f"⚠ Failed to process sample {idx}: {e}")
             plt.close('all')
             continue
-    
-    # Calculate final totals
-    total_correct = section_1_correct_count + section_2_correct_count
-    total_incorrect = section_1_incorrect_count + section_2_incorrect_count
-    
-    # Verify final counts match request
-    print("\n" + "="*60)
-    print("✅ GradCAM Generation Complete!")
-    print("="*60)
-    print(f"  Requested:  {num_correct} correct + {num_incorrect} incorrect = {num_correct + num_incorrect} total")
-    print(f"  Generated:  {total_correct} correct + {total_incorrect} incorrect = {len(gradcam_images)} total")
-    print(f"\n  Section breakdown:")
-    print(f"    Correct section (samples 1-{num_correct}):")
-    print(f"      ✓ Correct: {section_1_correct_count}/{num_correct}")
-    print(f"      ✗ Incorrect: {section_1_incorrect_count}/0 {('⚠️ UNEXPECTED!' if section_1_incorrect_count > 0 else '')}")
-    print(f"    Incorrect section (samples {num_correct+1}-{num_correct+num_incorrect}):")
-    print(f"      ✓ Correct: {section_2_correct_count}/0 {('⚠️ UNEXPECTED!' if section_2_correct_count > 0 else '')}")
-    print(f"      ✗ Incorrect: {section_2_incorrect_count}/{num_incorrect}")
-    
-    if total_correct != num_correct or total_incorrect != num_incorrect:
-        print(f"\n  ❌ ERROR: Final counts don't match request!")
-        print(f"     Expected {num_correct} correct + {num_incorrect} incorrect")
-        print(f"     Got {total_correct} correct + {total_incorrect} incorrect")
-        print(f"\n     This indicates a bug in sample selection. Please report this issue.")
-    elif section_1_incorrect_count > 0 or section_2_correct_count > 0:
-        print(f"\n  ⚠️  WARNING: Samples are in wrong sections!")
-        print(f"     Some correct samples in incorrect section or vice versa")
-        print(f"     This is a BUG - selection logic failed")
-    else:
-        print(f"\n  ✅ Perfect: All samples in correct sections with correct labels!")
-    
-    print("="*60 + "\n")
-    
+
     # Log to WandB
     if gradcam_images:
         logger.experiment.log({
             "test/gradcam_samples": gradcam_images,
             "test/gradcam_total": len(gradcam_images),
-            "test/gradcam_correct": total_correct,
-            "test/gradcam_incorrect": total_incorrect,
-            "test/gradcam_requested_correct": num_correct,
-            "test/gradcam_requested_incorrect": num_incorrect,
-            "test/gradcam_section1_correct": section_1_correct_count,
-            "test/gradcam_section1_incorrect": section_1_incorrect_count,
-            "test/gradcam_section2_correct": section_2_correct_count,
-            "test/gradcam_section2_incorrect": section_2_incorrect_count
+            "test/gradcam_correct": num_correct,
+            "test/gradcam_incorrect": num_incorrect
         })
+        print(f"✅ Logged {len(gradcam_images)} GradCAM visualizations to WandB")
     else:
-        print("\n⚠ No GradCAM visualizations generated")
-    
-    # Cleanup
-    gradcam_helper.cleanup()
-    del gradcam_images
-    
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-    
-    model.model.eval()
+        print("⚠ No GradCAM images generated")
+
+    gradcam.cleanup()
+    torch.cuda.empty_cache()

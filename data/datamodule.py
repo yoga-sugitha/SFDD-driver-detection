@@ -48,7 +48,7 @@ class SFDDDataModule(L.LightningDataModule):
         self.binary_class_map = binary_class_map
 
         # Immediately compute and store
-        self.num_classes = 2 if self.task_type == 'binary' else 10
+        self.num_classes = 2 if self.task_type == 'binary' else 4
         self.class_names = (
             ['Normal Driving', 'Distracted Driving'] if self.task_type == 'binary' else
             ["normal driver", "texting-right", "talking on the phone-right",
