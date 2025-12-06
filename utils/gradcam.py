@@ -1,6 +1,6 @@
 """
 Efficient GradCAM that uses already-computed test predictions
-No need to re-run inference - just use the stored results!
+Works with single-GPU testing to avoid DDP index misalignment
 """
 import torch
 import torch.nn as nn
@@ -128,7 +128,9 @@ def select_samples_from_test_results(
 ) -> Tuple[List[int], List[int]]:
     """
     Select sample indices from already-computed test results.
-    This is MUCH faster than re-running inference!
+    
+    IMPORTANT: This assumes test was run with single GPU (devices=1)
+    to avoid DDP index misalignment issues.
     
     Args:
         all_preds: Tensor of all predictions from test set [N]
@@ -202,10 +204,13 @@ def generate_gradcam_visualizations(
     """
     Generate GradCAM visualizations efficiently using already-computed test results.
     
+    REQUIREMENT: Test must be run with single GPU (devices=1) to avoid
+    DDP index misalignment issues.
+    
     This version:
     - Uses predictions already stored in model.all_test_preds/all_test_targets
     - Only loads the specific images needed (no batch iteration)
-    - Much faster than the original implementation
+    - FAST: ~5-10 seconds for 6 images
     
     Args:
         model: Trained Lightning module (must have all_test_preds/all_test_targets)
@@ -262,11 +267,15 @@ def generate_gradcam_visualizations(
     all_indices = correct_indices + incorrect_indices
     
     print(f"\n✓ Processing {len(all_indices)} samples")
-    print(f"   First {num_correct} are CORRECT")
-    print(f"   Last {num_incorrect} are INCORRECT")
+    print(f"   First {num_correct} should be CORRECT")
+    print(f"   Last {num_incorrect} should be INCORRECT")
     print("="*60 + "\n")
     
     gradcam_images = []
+    
+    # Verification counters
+    verification_correct = 0
+    verification_incorrect = 0
     
     # Process each selected sample
     for sample_num, test_idx in enumerate(all_indices, 1):
@@ -274,13 +283,18 @@ def generate_gradcam_visualizations(
         
         try:
             # Load ONLY this specific image (no batch loading!)
-            # This is MUCH faster than iterating through batches
             img_tensor, true_label = data_module.get_test_sample(test_idx)
-            img_tensor = img_tensor.unsqueeze(0).to(device)  # Add batch dimension
+            img_tensor = img_tensor.unsqueeze(0).to(device)
             
-            # Get prediction (stored from test)
+            # Get prediction from stored results
             pred_label = model.all_test_preds[test_idx].item()
             is_actually_correct = (pred_label == true_label)
+            
+            # Track verification
+            if is_correct_section and is_actually_correct:
+                verification_correct += 1
+            elif not is_correct_section and not is_actually_correct:
+                verification_incorrect += 1
             
             # Generate GradCAM
             with torch.set_grad_enabled(True):
@@ -339,32 +353,44 @@ def generate_gradcam_visualizations(
             plt.close(fig)
             plt.close('all')
             
-            # Verify sample is in correct section
-            if is_correct_section and not is_actually_correct:
-                print(f"  [{sample_num}/{len(all_indices)}] ⚠️  {status} (UNEXPECTED IN CORRECT SECTION)")
-            elif not is_correct_section and is_actually_correct:
-                print(f"  [{sample_num}/{len(all_indices)}] ⚠️  {status} (UNEXPECTED IN INCORRECT SECTION)")
+            # Print status
+            section_name = "CORRECT" if is_correct_section else "INCORRECT"
+            if is_correct_section == is_actually_correct:
+                print(f"  [{sample_num}/{len(all_indices)}] ✓ {status} in {section_name} section | True: {true_name}")
             else:
-                print(f"  [{sample_num}/{len(all_indices)}] ✓ {status} | True: {true_name}")
+                print(f"  [{sample_num}/{len(all_indices)}] ⚠️  {status} (WRONG SECTION: {section_name}) | True: {true_name}")
             
         except Exception as e:
             print(f"  [{sample_num}/{len(all_indices)}] ✗ Failed: {e}")
             plt.close('all')
             continue
     
-    # Log results
+    # Final verification
     print("\n" + "="*60)
     print("✅ GradCAM Generation Complete!")
     print("="*60)
     print(f"  Generated: {len(gradcam_images)}/{len(all_indices)} visualizations")
+    print(f"  Verification:")
+    print(f"    Correct samples in correct section: {verification_correct}/{num_correct}")
+    print(f"    Incorrect samples in incorrect section: {verification_incorrect}/{num_incorrect}")
+    
+    if verification_correct == num_correct and verification_incorrect == num_incorrect:
+        print(f"  ✅ Perfect: All samples correctly aligned!")
+    else:
+        print(f"  ⚠️  Warning: Some samples may be misaligned")
+        print(f"     This usually means test was run with multi-GPU (DDP)")
+        print(f"     Solution: Use devices=1 for test_trainer")
     print("="*60 + "\n")
     
+    # Log to WandB
     if gradcam_images:
         logger.experiment.log({
             "test/gradcam_samples": gradcam_images,
             "test/gradcam_total": len(gradcam_images),
             "test/gradcam_requested_correct": num_correct,
             "test/gradcam_requested_incorrect": num_incorrect,
+            "test/gradcam_verified_correct": verification_correct,
+            "test/gradcam_verified_incorrect": verification_incorrect,
         })
     else:
         print("\n⚠ No GradCAM visualizations generated")

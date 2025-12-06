@@ -1,5 +1,6 @@
 """
-Main training script for SFDD Driver Detection with PyTorch Lightning and Hydra
+Main training script with multi-GPU training but single-GPU testing
+This avoids DDP index misalignment issues for GradCAM
 """
 
 import os
@@ -113,7 +114,7 @@ def train(cfg: DictConfig):
         model_hparams=model_hparams,
         optimizer_name=cfg.optimizer.name,
         optimizer_hparams=optimizer_hparams,
-        class_names=class_names,  # Use actual from data
+        class_names=class_names,
     )
     
     # Setup checkpoint directory
@@ -139,11 +140,13 @@ def train(cfg: DictConfig):
         ),
     ]
     
-    # Setup trainer
+    # ============================================================
+    # TRAINING TRAINER: Use multi-GPU if available
+    # ============================================================
     trainer_kwargs = {
         "default_root_dir": checkpoint_dir,
         "accelerator": cfg.training.accelerator,
-        "devices": cfg.training.devices,
+        "devices": cfg.training.devices,  # Use all available GPUs for training
         "max_epochs": cfg.training.max_epochs,
         "logger": logger,
         "callbacks": callbacks,
@@ -172,9 +175,22 @@ def train(cfg: DictConfig):
         model_hparams=model_hparams,
         optimizer_name=cfg.optimizer.name,
         optimizer_hparams=optimizer_hparams,
-        class_names=class_names,  # Use actual from data
+        class_names=class_names,
     )
     best_model.eval()
+    
+    # ============================================================
+    # TESTING TRAINER: Use SINGLE GPU to avoid DDP issues
+    # ============================================================
+    print(f"\n{'='*70}")
+    print("Creating single-GPU trainer for testing...")
+    print(f"{'='*70}\n")
+    
+    test_trainer = L.Trainer(
+        accelerator=cfg.training.accelerator,
+        devices=1,  # ← SINGLE GPU for testing
+        logger=logger,
+    )
     
     # Compute model complexity
     print(f"\n{'='*70}")
@@ -194,11 +210,11 @@ def train(cfg: DictConfig):
         num_batches=50
     )
     
-    # Test evaluation
+    # Test evaluation with single GPU
     print(f"\n{'='*70}")
-    print("Running Test Evaluation...")
+    print("Running Test Evaluation (Single GPU)...")
     print(f"{'='*70}\n")
-    test_results = trainer.test(best_model, ckpt_path=None, datamodule=data_module)
+    test_results = test_trainer.test(best_model, ckpt_path=None, datamodule=data_module)
     test_result = test_results[0] if test_results else {}
     
     # Generate confusion matrix
@@ -207,15 +223,16 @@ def train(cfg: DictConfig):
         plot_confusion_matrix(
             best_model.all_test_preds,
             best_model.all_test_targets,
-            class_names,  # Use actual from data
+            class_names,
             logger=logger if isinstance(logger, WandbLogger) else None,
             save_path=cm_path
         )
     
     # Generate GradCAM visualizations
+    # Now the indices will be correctly aligned!
     if cfg.xai.enable_gradcam and isinstance(logger, WandbLogger):
         generate_gradcam_visualizations(
-            model=best_model,  # Has all_test_preds/all_test_targets from test()
+            model=best_model,
             data_module=data_module,
             logger=logger,
             class_names=class_names,
@@ -261,4 +278,3 @@ def train(cfg: DictConfig):
 
 if __name__ == "__main__":
     train()
-
