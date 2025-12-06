@@ -183,6 +183,14 @@ def train(cfg: DictConfig):
     best_model.eval()
     
     # ============================================================
+    # CRITICAL: Destroy distributed process group from training
+    # ============================================================
+    if torch.distributed.is_initialized():
+        print("\n✓ Destroying distributed process group from training...")
+        torch.distributed.destroy_process_group()
+        print("✓ Process group destroyed")
+    
+    # ============================================================
     # TESTING TRAINER: Use SINGLE GPU to avoid DDP issues
     # ============================================================
     print(f"\n{'='*70}")
