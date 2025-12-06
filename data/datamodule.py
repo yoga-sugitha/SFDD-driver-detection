@@ -157,6 +157,37 @@ class SFDDDataModule(L.LightningDataModule):
                     self._test_labels, 
                     transform=self.test_transform
                 )
+
+    
+    def get_test_sample(self, idx: int):
+        """
+        Return (image: Tensor, label: int) for test set index `idx`.
+        
+        The image is returned **as transformed by test_transform** (normalized, resized).
+        This matches exactly what your test_dataloader returns.
+        
+        Args:
+            idx: Index in the test split (0 to len(test_dataset)-1)
+            
+        Returns:
+            (image: torch.Tensor in [C, H, W], label: int)
+        """
+        if not hasattr(self, '_test_paths') or not hasattr(self, '_test_labels'):
+            # Ensure test split exists
+            self.setup(stage='test')
+        
+        if idx < 0 or idx >= len(self._test_paths):
+            raise IndexError(f"Test set index {idx} out of range (0–{len(self._test_paths)-1})")
+        
+        path = self._test_paths[idx]
+        label = self._test_labels[idx]
+        
+        # Load and transform using the same logic as ImagePathDataset
+        from PIL import Image
+        image = Image.open(path).convert('RGB')
+        image = self.test_transform(image)  # Apply test-time transform (normalize, etc.)
+        
+        return image, label
     
     def _convert_to_binary(self, labels):
         """

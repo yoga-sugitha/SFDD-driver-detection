@@ -215,13 +215,12 @@ def train(cfg: DictConfig):
     # Generate GradCAM visualizations
     if cfg.xai.enable_gradcam and isinstance(logger, WandbLogger):
         generate_gradcam_visualizations(
-            model=best_model,
+            model=best_model,  # Has all_test_preds/all_test_targets from test()
             data_module=data_module,
             logger=logger,
-            class_names=class_names,  # Use actual from data
+            class_names=class_names,
             num_correct=cfg.xai.num_correct_samples,
             num_incorrect=cfg.xai.num_incorrect_samples,
-            inspect_architecture=cfg.xai.inspect_architecture
         )
     
     # Compile and log all metrics
