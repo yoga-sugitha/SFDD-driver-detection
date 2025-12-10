@@ -119,24 +119,16 @@ class HowDriveDataModule(L.LightningDataModule):
 
         # Get unique subjects and set split (deterministic with seed)
         unique_subjects = sorted(set(all_subjects))
+        if len(unique_subjects) != 9:
+            raise ValueError(
+                f"Expected exactly 9 subjects for fixed 5:2:2 split, but found {len(unique_subjects)}: {unique_subjects}"
+        )
         random.seed(self.seed)
         shuffled = random.sample(unique_subjects, len(unique_subjects))
 
-        # Fixed: 5 train, 2 val, 2 test (for 9 subjects)
-        # Adapt if subject count differs
-        n = len(shuffled)
-        if n < 3:
-            raise ValueError("Need at least 3 subjects for train/val/test split")
-        n_train = max(1, int(0.6 * n))
-        n_val = max(1, int(0.2 * n))
-        n_test = n - n_train - n_val
-        if n_test < 1:
-            n_test = 1
-            n_train = n - n_val - n_test
-
-        train_subjects = set(shuffled[:n_train])
-        val_subjects = set(shuffled[n_train:n_train + n_val])
-        test_subjects = set(shuffled[n_train + n_val:])
+        train_subjects = set(shuffled[:5])
+        val_subjects = set(shuffled[5:7])
+        test_subjects = set(shuffled[7:])
 
         # Assign samples to splits
         train_paths, train_labels = [], []
