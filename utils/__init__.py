@@ -6,10 +6,12 @@ Create these __init__.py files in each package directory
 from .metrics import compute_model_complexity, measure_inference_latency
 from .visualization import plot_confusion_matrix
 from .gradcam import generate_gradcam_visualizations
+import visualize_dataset_howdrive
 
 __all__ = [
     'compute_model_complexity',
     'measure_inference_latency', 
     'plot_confusion_matrix',
-    'generate_gradcam_visualizations'
+    'generate_gradcam_visualizations',
+    'visualize_dataset_howdrive'
 ]
