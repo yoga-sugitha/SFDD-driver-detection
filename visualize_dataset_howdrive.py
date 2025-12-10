@@ -3,13 +3,14 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 from collections import defaultdict
+from data.howdrive_dataset import HowDriveDataset
 import argparse
 
 # ==================
 # CONFIGURATION
 # ==================
 def parse_args():
-    parser = argparse.ArgumentParser(description="Visualize HowDir Dataset Structure (Subject-Wise Split)")
+    parser = argparse.ArgumentParser(description="Visualize HowDir Dataset Structure")
     parser.add_argument(
         "--root-dir",
         type=str,
@@ -17,12 +18,24 @@ def parse_args():
         help="Path to the HowDir dataset root (e.g., /kaggle/input/.../HowDir)"
     )
     parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="./visualizations",
+        help="Directory to save plots (default: ./visualizations)"
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=42,
         help="Random seed for subject split (default: 42)"
     )
+    parser.add_argument(
+        "--no-display",
+        action="store_true",
+        help="Don't display plots inline (only save to files)"
+    )
     return parser.parse_args()
+
 
 CLASS_NAMES = [f"c{i}" for i in range(10)]
 
@@ -56,30 +69,30 @@ def count_images_per_subject_class(root_dir, subjects, class_names):
 def main():
     args = parse_args()
     ROOT_DIR = args.root_dir
+    OUTPUT_DIR = args.output_dir
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     # Validate root dir
     if not os.path.exists(ROOT_DIR):
         raise FileNotFoundError(f"Root directory not found: {ROOT_DIR}")
-
+    
     SUBJECTS = sorted([
         d for d in os.listdir(ROOT_DIR)
         if os.path.isdir(os.path.join(ROOT_DIR, d))
     ])
-
+    
     if not SUBJECTS:
         raise ValueError(f"No subject directories found in {ROOT_DIR}")
-
+    
     print(f"🔍 Found {len(SUBJECTS)} subjects in: {ROOT_DIR}")
-    print(f"📌 Using fixed split: 5 train / 2 val / 2 test (for 9 subjects)")
 
     # Set seed for reproducible split
     np.random.seed(args.seed)
     shuffled_subjects = np.random.permutation(SUBJECTS).tolist()
-
-    # Hardcoded split for 9 subjects
+    
+    # Subject-wise split: 5 train, 2 val, 2 test (works for 9 subjects)
     if len(shuffled_subjects) != 9:
-        raise ValueError(f"Expected exactly 9 subjects, got {len(shuffled_subjects)}. "
-                         "This script assumes 9 subjects for fixed 5:2:2 split.")
+        print(f"⚠️  Expected 9 subjects, got {len(shuffled_subjects)}. Adjusting split proportions.")
 
     TRAIN_SUBJECTS = shuffled_subjects[:5]
     VAL_SUBJECTS = shuffled_subjects[5:7]
@@ -102,22 +115,7 @@ def main():
         for cls, cnt in class_dict.items():
             global_class_counts[cls] += cnt
 
-    # ---- Print Summary First ----
-    print("\n" + "="*60)
-    print("📊 DATASET SUMMARY")
-    print("="*60)
-    print(f"Total images: {sum(subject_totals.values())}")
-    print(f"Subjects: {len(SUBJECTS)} → Train:5, Val:2, Test:2")
-    print(f"Classes: {len(CLASS_NAMES)} (c0 to c9)")
-    print("\nSplitOptions:")
-    for split, subs in SPLITS.items():
-        total_imgs = sum(subject_totals[s] for s in subs)
-        print(f"  {split:5s}: {len(subs)} subjects → {total_imgs} images → {subs}")
-
     # ---- Plot 1: Global Class Distribution ----
-    print("\n" + "="*60)
-    print("📈 GLOBAL CLASS DISTRIBUTION")
-    print("="*60)
     plt.figure(figsize=(10, 5))
     bars = plt.bar(global_class_counts.keys(), global_class_counts.values(), color='steelblue')
     plt.title("Global Class Distribution (All Subjects)", fontsize=14)
@@ -127,12 +125,13 @@ def main():
     for bar in bars:
         plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5,
                  str(int(bar.get_height())), ha='center', va='bottom')
-    plt.show()
+    plt.tight_layout()
+    plt.savefig(os.path.join(OUTPUT_DIR, "class_distribution_global.png"))
+    if not args.no_display:
+        plt.show()
+    plt.close()
 
     # ---- Plot 2: Images per Subject ----
-    print("\n" + "="*60)
-    print("👥 IMAGES PER SUBJECT")
-    print("="*60)
     plt.figure(figsize=(12, 5))
     subjects_sorted = sorted(subject_totals.keys())
     totals_sorted = [subject_totals[s] for s in subjects_sorted]
@@ -145,12 +144,13 @@ def main():
     for bar in bars:
         plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5,
                  str(int(bar.get_height())), ha='center', va='bottom')
-    plt.show()
+    plt.tight_layout()
+    plt.savefig(os.path.join(OUTPUT_DIR, "images_per_subject.png"))
+    if not args.no_display:
+        plt.show()
+    plt.close()
 
     # ---- Plot 3: Subject × Class Heatmap ----
-    print("\n" + "="*60)
-    print("🖼️  SUBJECT × CLASS HEATMAP")
-    print("="*60)
     matrix = []
     for subject in sorted(SUBJECTS):
         row = [all_counts.get(subject, {}).get(cls, 0) for cls in CLASS_NAMES]
@@ -168,12 +168,13 @@ def main():
     plt.title("Images per Subject × Class", fontsize=14)
     plt.xlabel("Class")
     plt.ylabel("Subject")
-    plt.show()
+    plt.tight_layout()
+    plt.savefig(os.path.join(OUTPUT_DIR, "subject_class_heatmap.png"))
+    if not args.no_display:
+        plt.show()
+    plt.close()
 
     # ---- Plot 4: Split-wise Class Distribution ----
-    print("\n" + "="*60)
-    print("🔄 SPLIT-WISE CLASS DISTRIBUTION")
-    print("="*60)
     split_class_counts = {split: {cls: 0 for cls in CLASS_NAMES} for split in SPLITS}
     for split, subjects in SPLITS.items():
         for subject in subjects:
@@ -192,12 +193,22 @@ def main():
     plt.xticks(x, CLASS_NAMES)
     plt.legend()
     plt.grid(axis='y', linestyle='--', alpha=0.7)
-    plt.show()
+    plt.tight_layout()
+    plt.savefig(os.path.join(OUTPUT_DIR, "split_class_distribution.png"))
+    if not args.no_display:
+        plt.show()
+    plt.close()
 
-    # Final note
-    print("\n" + "="*60)
-    print("✅ Visualization complete. No files saved — all plots shown above.")
-    print("="*60)
+    # ---- Print Summary ----
+    print(f"\n✅ Analysis complete!")
+    print(f"📊 Total images: {sum(subject_totals.values())}")
+    print(f"👥 Subjects: {len(SUBJECTS)}")
+    print(f"📚 Classes: {len(CLASS_NAMES)}")
+    print("\nSplits (subject-wise):")
+    for split, subs in SPLITS.items():
+        total_imgs = sum(subject_totals[s] for s in subs)
+        print(f"  {split:5s}: {len(subs):2d} subjects, {total_imgs:3d} images")
+    print(f"\n📁 Plots saved to: {os.path.abspath(OUTPUT_DIR)}")
 
 if __name__ == "__main__":
     main()
