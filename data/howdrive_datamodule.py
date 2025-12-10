@@ -11,7 +11,7 @@ from torchvision import transforms as T
 from typing import List, Tuple
 from .dataset import ImagePathDataset
 
-class SFDDDataModule(L.LightningDataModule):
+class HowDriveDataModule(L.LightningDataModule):
     """
     Lightning DataModule with **subject-wise (person-disjoint) splitting**.
     Designed for fair evaluation on driver state recognition.
