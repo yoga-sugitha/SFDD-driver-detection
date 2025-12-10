@@ -1,5 +1,5 @@
 import os
-from datamodule_module import HowDriveDataModule  # adjust import to your project structure
+from data.howdrive_datamodule import HowDriveDataModule  # adjust import to your project structure
 import torch
 
 def inspect_dataloader(name, loader):
