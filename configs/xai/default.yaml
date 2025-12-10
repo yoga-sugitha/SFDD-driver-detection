@@ -1,3 +1,3 @@
-enable_gradcam: true
+enable_gradcam: false
 num_correct_samples: 3
 num_incorrect_samples: 3
