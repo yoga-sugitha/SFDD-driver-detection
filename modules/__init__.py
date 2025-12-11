@@ -2,7 +2,7 @@
 Create these __init__.py files in each package directory
 """
 # modules/__init__.py
-from .lightning_module import ResNetModule
+from .lightning_module import LightningModule
 
-__all__ = ['ResNetModule']
+__all__ = ['LightningModule']
 
