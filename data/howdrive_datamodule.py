@@ -1,5 +1,5 @@
 """
-Lightning DataModule for SFDD dataset with subject-wise split (person-disjoint)
+Lightning DataModule for HowDrive dataset with subject-wise split (person-disjoint)
 Supports multi-class only in this pipeline; binary args retained for compatibility.
 """
 import os
