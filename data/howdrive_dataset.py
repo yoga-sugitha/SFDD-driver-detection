@@ -18,7 +18,7 @@ class HowDriveDataset(Dataset):
         self.samples = []  # list of (image_path, class_label)
         self.class_to_idx = self._get_class_to_idx()
 
-        for subject in subjects:
+        for subject in self.subjects:
             subject_path = os.path.join(root_dir, subject)
             for class_dir in sorted(os.listdir(subject_path)):
                 if not class_dir.startswith('c') or not class_dir[1:].isdigit():
