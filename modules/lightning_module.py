@@ -12,7 +12,7 @@ from torchmetrics.classification import (
 from typing import List, Dict, Any
 from models.factory import create_model
 
-class ResNetModule(L.LightningModule):
+class LightningModule(L.LightningModule):
     """
     Lightning module for training ResNet models
     

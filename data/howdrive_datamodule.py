@@ -9,7 +9,7 @@ import lightning as L
 from torch.utils.data import DataLoader
 from torchvision import transforms as T
 from typing import List, Tuple
-from .dataset import ImagePathDataset
+from .howdrive_dataset import HowDriveDataset
 
 class HowDriveDataModule(L.LightningDataModule):
     """

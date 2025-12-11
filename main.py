@@ -19,7 +19,7 @@ from lightning.pytorch.loggers import WandbLogger, CSVLogger
 
 from data.datamodule import SFDDDataModule
 from data.howdrive_datamodule import HowDriveDataModule
-from modules.lightning_module import ResNetModule
+from modules.lightning_module import LightningModule
 from utils.metrics import compute_model_complexity, measure_inference_latency
 from utils.visualization import plot_confusion_matrix
 from utils.gradcam import generate_gradcam_visualizations
@@ -95,9 +95,9 @@ def train(cfg: DictConfig):
 
     # Prepare optimizer hyperparameters
     optimizer_hparams = OmegaConf.to_container(cfg.optimizer.hparams, resolve=True)
-    
+    # need improvements to allow for model selection
     # Initialize model
-    model = ResNetModule(
+    model = LightningModule(
         model_name=cfg.model.name,
         model_hparams=model_hparams,
         optimizer_name=cfg.optimizer.name,
@@ -154,7 +154,7 @@ def train(cfg: DictConfig):
     print("="*70)
     
     # Load checkpoint to CPU first to avoid device conflicts
-    best_model = ResNetModule.load_from_checkpoint(
+    best_model = LightningModule.load_from_checkpoint(
         trainer.checkpoint_callback.best_model_path,
         model_name=cfg.model.name,
         model_hparams=model_hparams,
@@ -226,7 +226,6 @@ def train(cfg: DictConfig):
         )
     
     # Generate GradCAM visualizations
-    # Now the indices will be correctly aligned!
     if cfg.xai.enable_gradcam and isinstance(logger, WandbLogger):
         generate_gradcam_visualizations(
             model=best_model,
