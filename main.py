@@ -199,6 +199,7 @@ def train(cfg: DictConfig):
     )
     
     # Measure inference latency
+    data_module.setup(stage="test")
     test_loader = data_module.test_dataloader()
     latency_metrics = measure_inference_latency(
         best_model,
