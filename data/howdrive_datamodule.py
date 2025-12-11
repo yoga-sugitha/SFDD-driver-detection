@@ -105,60 +105,63 @@ class HowDriveDataModule(L.LightningDataModule):
         return image_paths, labels, subjects
 
     def setup(self, stage=None):
-        if hasattr(self, '_datasets_prepared'):
-            return
+        # Only parse the directory structure once
+        if not hasattr(self, '_datasets_prepared'):
+            # Get all data
+            all_paths, all_labels, all_subjects = self._get_subject_class_paths()
+            if not all_paths:
+                raise ValueError(f"No images found in {self.data_dir}. Check directory structure.")
 
-        # Get all data
-        all_paths, all_labels, all_subjects = self._get_subject_class_paths()
-        if not all_paths:
-            raise ValueError(f"No images found in {self.data_dir}. Check directory structure.")
+            # Get unique subjects and set split (deterministic with seed)
+            unique_subjects = sorted(set(all_subjects))
+            if len(unique_subjects) != 9:
+                raise ValueError(
+                    f"Expected exactly 9 subjects for fixed 5:2:2 split, but found {len(unique_subjects)}: {unique_subjects}"
+                )
+            random.seed(self.seed)
+            shuffled = random.sample(unique_subjects, len(unique_subjects))
 
-        # Get unique subjects and set split (deterministic with seed)
-        unique_subjects = sorted(set(all_subjects))
-        if len(unique_subjects) != 9:
-            raise ValueError(
-                f"Expected exactly 9 subjects for fixed 5:2:2 split, but found {len(unique_subjects)}: {unique_subjects}"
-        )
-        random.seed(self.seed)
-        shuffled = random.sample(unique_subjects, len(unique_subjects))
+            train_subjects = set(shuffled[:5])
+            val_subjects = set(shuffled[5:7])
+            test_subjects = set(shuffled[7:])
 
-        train_subjects = set(shuffled[:5])
-        val_subjects = set(shuffled[5:7])
-        test_subjects = set(shuffled[7:])
+            # Assign samples to splits
+            train_paths, train_labels = [], []
+            val_paths, val_labels = [], []
+            test_paths, test_labels = [], []
 
-        # Assign samples to splits
-        train_paths, train_labels = [], []
-        val_paths, val_labels = [], []
-        test_paths, test_labels = [], []
+            for path, label, subject in zip(all_paths, all_labels, all_subjects):
+                if subject in train_subjects:
+                    train_paths.append(path)
+                    train_labels.append(label)
+                elif subject in val_subjects:
+                    val_paths.append(path)
+                    val_labels.append(label)
+                elif subject in test_subjects:
+                    test_paths.append(path)
+                    test_labels.append(label)
 
-        for path, label, subject in zip(all_paths, all_labels, all_subjects):
-            if subject in train_subjects:
-                train_paths.append(path)
-                train_labels.append(label)
-            elif subject in val_subjects:
-                val_paths.append(path)
-                val_labels.append(label)
-            elif subject in test_subjects:
-                test_paths.append(path)
-                test_labels.append(label)
+            # Store for dataloaders and get_test_sample
+            self._train_paths, self._train_labels = train_paths, train_labels
+            self._val_paths, self._val_labels = val_paths, val_labels
+            self._test_paths, self._test_labels = test_paths, test_labels
+            self._datasets_prepared = True
 
-        # Store for dataloaders and get_test_sample
-        self._train_paths, self._train_labels = train_paths, train_labels
-        self._val_paths, self._val_labels = val_paths, val_labels
-        self._test_paths, self._test_labels = test_paths, test_labels
-        self._datasets_prepared = True
+            print(f"\n✅ Subject-wise split (seed={self.seed}):")
+            print(f"   Train: {len(train_subjects)} subjects → {len(train_paths)} images")
+            print(f"   Val:   {len(val_subjects)} subjects → {len(val_paths)} images")
+            print(f"   Test:  {len(test_subjects)} subjects → {len(test_paths)} images")
 
-        print(f"\n✅ Subject-wise split (seed={self.seed}):")
-        print(f"   Train: {len(train_subjects)} subjects → {len(train_paths)} images")
-        print(f"   Val:   {len(val_subjects)} subjects → {len(val_paths)} images")
-        print(f"   Test:  {len(test_subjects)} subjects → {len(test_paths)} images")
-
-        # Create datasets if needed
+        # Create datasets based on stage (can be called multiple times)
         if stage == "fit" or stage is None:
-            self.train_dataset = HowDriveDataset(self._train_paths, self._train_labels, self.train_transform)
-            self.val_dataset = HowDriveDataset(self._val_paths, self._val_labels, self.test_transform)
+            if self.train_dataset is None:
+                self.train_dataset = HowDriveDataset(self._train_paths, self._train_labels, self.train_transform)
+            if self.val_dataset is None:
+                self.val_dataset = HowDriveDataset(self._val_paths, self._val_labels, self.test_transform)
+        
         if stage == "test" or stage is None:
-            self.test_dataset = HowDriveDataset(self._test_paths, self._test_labels, self.test_transform)
+            if self.test_dataset is None:
+                self.test_dataset = HowDriveDataset(self._test_paths, self._test_labels, self.test_transform)
 
     def get_test_sample(self, idx: int):
         """Get a single test sample (image tensor, label) by index."""

@@ -24,6 +24,12 @@ from utils.metrics import compute_model_complexity, measure_inference_latency
 from utils.visualization import plot_confusion_matrix
 from utils.gradcam import generate_gradcam_visualizations
 
+DATASET_REGISTRY = {
+    "howdrive-sample": HowDriveDataModule,
+    "howdrive": HowDriveDataModule,
+    "sfdd": SFDDDataModule,
+}
+
 def setup_logger(cfg: DictConfig, experiment_name: str):
     """Setup appropriate logger based on config"""
     if cfg.logging.enable_wandb:
@@ -68,11 +74,6 @@ def train(cfg: DictConfig):
 
 
     # Setup Lightning Data Module
-    DATASET_REGISTRY = {
-        "howdrive-sample": HowDriveDataModule,
-        "howdrive": HowDriveDataModule,
-        "sfdd": SFDDDataModule,
-    }
     data_cls = DATASET_REGISTRY.get(cfg.data.name)
     if data_cls is None:
         raise ValueError(f"Unknown dataset name: {cfg.data.name}")
