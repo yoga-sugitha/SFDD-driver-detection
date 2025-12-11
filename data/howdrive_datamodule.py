@@ -155,10 +155,10 @@ class HowDriveDataModule(L.LightningDataModule):
 
         # Create datasets if needed
         if stage == "fit" or stage is None:
-            self.train_dataset = HowDriveDataset(train_paths, train_labels, self.train_transform)
-            self.val_dataset = HowDriveDataset(val_paths, val_labels, self.test_transform)
+            self.train_dataset = HowDriveDataset(self._train_paths, self._train_labels, self.train_transform)
+            self.val_dataset = HowDriveDataset(self._val_paths, self._val_labels, self.test_transform)
         if stage == "test" or stage is None:
-            self.test_dataset = HowDriveDataset(test_paths, test_labels, self.test_transform)
+            self.test_dataset = HowDriveDataset(self._test_paths, self._test_labels, self.test_transform)
 
     def get_test_sample(self, idx: int):
         """Get a single test sample (image tensor, label) by index."""

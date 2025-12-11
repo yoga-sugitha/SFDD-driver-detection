@@ -1,44 +1,37 @@
 import os
-import random
 from PIL import Image
-from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms
+from torch.utils.data import Dataset
 
 class HowDriveDataset(Dataset):
-    def __init__(self, root_dir, subjects, transform=None):
+    def __init__(self, image_paths, labels, transform=None):
         """
+        Dataset that loads pre-specified image paths and labels.
+        Used after subject-wise split has already been performed.
+
         Args:
-            root_dir (str): Path to '/kaggle/input/howdir-safedriving-benchmarking-sample/HowDir'
-            subjects (list): List of subject names to include (e.g., ['zakaria', 'hajar'])
-            transform (callable, optional): Optional transform to apply to images
+            image_paths (list[str]): Full paths to images
+            labels (list[int]): Corresponding class labels (0–9)
+            transform (callable, optional): Transform to apply to images
         """
-        self.root_dir = root_dir
-        self.subjects = subjects
+        assert len(image_paths) == len(labels), "Number of paths and labels must match"
+        self.image_paths = image_paths
+        self.labels = labels
         self.transform = transform
-        self.samples = []  # list of (image_path, class_label)
-        self.class_to_idx = self._get_class_to_idx()
-
-        for subject in self.subjects:
-            subject_path = os.path.join(root_dir, subject)
-            for class_dir in sorted(os.listdir(subject_path)):
-                if not class_dir.startswith('c') or not class_dir[1:].isdigit():
-                    continue
-                class_idx = int(class_dir[1:])  # 'c0' → 0, 'c9' → 9
-                class_path = os.path.join(subject_path, class_dir)
-                for img_name in os.listdir(class_path):
-                    if img_name.lower().endswith(('.jpg', '.jpeg', '.png')):
-                        self.samples.append((os.path.join(class_path, img_name), class_idx))
-
-    def _get_class_to_idx(self):
-        # c0 to c9 → 0 to 9
-        return {f'c{i}': i for i in range(10)}
 
     def __len__(self):
-        return len(self.samples)
+        return len(self.image_paths)
 
     def __getitem__(self, idx):
-        img_path, label = self.samples[idx]
+        img_path = self.image_paths[idx]
+        label = self.labels[idx]
+
         image = Image.open(img_path).convert('RGB')
         if self.transform:
             image = self.transform(image)
+
         return image, label
+
+    # Optional: useful for logging or inference
+    @property
+    def class_to_idx(self):
+        return {i: i for i in range(10)}  # c0→0, ..., c9→9
