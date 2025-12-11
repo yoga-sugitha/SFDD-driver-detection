@@ -1,8 +1,15 @@
-# default or fast training with 1 epoch only
-accelerator: "auto"
-devices: "auto"
-max_epochs: 1
-log_every_n_steps: 10
-gradient_clip_val: 1.0          # or 1.0 if you want clipping
-precision: "16-mixed"
-early_stopping_patience: 7
+trainer:
+  accelerator: "auto"             # good — uses GPU if available
+  devices: "auto"                 # good — picks 1 GPU or CPU
+  max_epochs: 1                   # minimal training
+
+  log_every_n_steps: 50           # reduces logging overhead
+  gradient_clip_val: 1.0          # fine (you can set 0 if not needed)
+  precision: "16-mixed"           # fast + safe
+
+  limit_train_batches: 5          # ✔ real training, but tiny
+  limit_val_batches: 5            # ✔ real validation (needed for CM)
+  num_sanity_val_steps: 0         # ✔ avoid pre-validation overhead
+  
+callbacks:
+  patience: 7      # ok (won't matter since only 1 epoch)

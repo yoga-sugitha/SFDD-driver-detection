@@ -1,4 +1,5 @@
 name: "resnet18"                 # or resnet34, resnet50
-pretrained: true
-# num_classes will be overridden by datamodule — don’t hardcode here!
-dropout: 0.3
+hparams:
+  pretrained: true
+  # num_classes will be overridden by datamodule — don’t hardcode here!
+  dropout: 0.3

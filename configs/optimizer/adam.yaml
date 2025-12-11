@@ -1,4 +1,5 @@
 name: "adam"
-lr: 0.001
-weight_decay: 1e-4
-# No momentum for Adam
+hparams:
+  lr: 0.001
+  weight_decay: 1e-4
+  # No momentum for Adam

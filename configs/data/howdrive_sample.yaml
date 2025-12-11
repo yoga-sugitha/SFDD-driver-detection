@@ -1,0 +1,11 @@
+name: "howdrive-sample"
+hparams:
+  data_dir: '/kaggle/input/howdir-safedriving-benchmarking-sample/HowDir'
+  batch_size: 32
+  num_workers: 0
+  val_split: 0.0 # this is set to 0, ensuring no confict with sfdd pipeline. This dataset has different structure (subject split)
+  img_size: 224
+  seed: 42
+  task_type: "multiclass"         # or "binary"
+
+binary_mapping: "c0_vs_rest"     # only used if task_type == binary

@@ -1,6 +1,7 @@
 """
 Main training script with multi-GPU training but single-GPU testing
 This avoids DDP index misalignment issues for GradCAM
++ Kaggle wandb online logging is removed,instead this uses offline-mode wandb logger that is provided by pytorch lightning
 """
 
 import os
@@ -17,6 +18,7 @@ from lightning.pytorch.callbacks import (
 from lightning.pytorch.loggers import WandbLogger, CSVLogger
 
 from data.datamodule import SFDDDataModule
+from data.howdrive_datamodule import HowDriveDataModule
 from modules.lightning_module import ResNetModule
 from utils.metrics import compute_model_complexity, measure_inference_latency
 from utils.visualization import plot_confusion_matrix
@@ -26,15 +28,6 @@ def setup_logger(cfg: DictConfig, experiment_name: str):
     """Setup appropriate logger based on config"""
     if cfg.logging.enable_wandb:
         try:
-            import wandb
-            try:
-                from kaggle_secrets import UserSecretsClient
-                user_secrets = UserSecretsClient()
-                wandb_key = user_secrets.get_secret("wandb_api")
-                wandb.login(key=wandb_key)
-            except:
-                print("⚠ WandB key not found, using offline mode")
-            
             logger = WandbLogger(
                 offline=cfg.logging.wandb_offline,
                 name=experiment_name,
@@ -69,44 +62,43 @@ def train(cfg: DictConfig):
     # set seed
     L.seed_everything(cfg.experiment.seed)
 
-    experiment_name = f"{cfg.model.name}_{cfg.experiment.dataset_name}_{cfg.data.task_type}_{cfg.optimizer.name}_{cfg.experiment.seed}_{cfg.experiment.id}"
+    experiment_name = f"{cfg.model.name}_{cfg.experiment.dataset_name}_{cfg.data.task_type}_{cfg.optimizer.name}_{cfg.experiment.seed}_{cfg.training.trainer.max_epochs}_{cfg.experiment.id}"
     print(f"Starting Experiment: {experiment_name}\n")
     logger = setup_logger(cfg, experiment_name)
 
-    # setup datamodule
-    data_module = SFDDDataModule(
-        data_dir=cfg.data.data_dir,
-        batch_size=cfg.data.batch_size,
-        num_workers=cfg.data.num_workers,
-        val_split=cfg.data.val_split,
-        img_size=cfg.data.img_size,
-        seed=cfg.data.seed if hasattr(cfg.data, 'seed') else cfg.experiment.seed,
-        task_type=cfg.data.task_type,
-        binary_mapping=cfg.data.binary_mapping if hasattr(cfg.data, 'binary_mapping') else 'c0_vs_rest',
-    )
 
+    # Setup Lightning Data Module
+    DATASET_REGISTRY = {
+        "howdrive-sample": HowDriveDataModule,
+        "howdrive": HowDriveDataModule,
+        "sfdd": SFDDDataModule,
+    }
+    data_cls = DATASET_REGISTRY.get(cfg.data.name)
+    if data_cls is None:
+        raise ValueError(f"Unknown dataset name: {cfg.data.name}")
+    
+    data_hparams = OmegaConf.to_container(cfg.data.hparams, resolve=True)
+    data_module = data_cls(
+        seed=cfg.data.hparams.seed,
+        binary_mapping=getattr(cfg.data, "binary_mapping", "c0_vs_rest"),
+        **data_hparams
+    )
+    
     # setup data to get actual num_classes and class_names
     data_module.setup(stage='fit')
     num_classes = data_module.num_classes
     class_names = data_module.class_names
 
-    print(f"\n✓ Task Type: {cfg.data.task_type}")
+    print(f"\n✓ Task Type: {cfg.data.hparams.task_type}")
     print(f"✓ Number of Classes: {num_classes}")
     print(f"✓ Class Names: {class_names}\n")
 
     # Prepare model hyperparameters (override num_classes from data)
-    model_hparams = OmegaConf.to_container(cfg.model, resolve=True)
+    model_hparams = OmegaConf.to_container(cfg.model.hparams, resolve=True)
     model_hparams['num_classes'] = num_classes
 
     # Prepare optimizer hyperparameters
-    optimizer_hparams = {
-        "lr": cfg.optimizer.lr,
-        "weight_decay": cfg.optimizer.weight_decay,
-    }
-    
-    # Add momentum for SGD
-    if cfg.optimizer.name.lower() == "sgd" and hasattr(cfg.optimizer, 'momentum'):
-        optimizer_hparams["momentum"] = cfg.optimizer.momentum
+    optimizer_hparams = OmegaConf.to_container(cfg.optimizer.hparams, resolve=True)
     
     # Initialize model
     model = ResNetModule(
@@ -120,6 +112,9 @@ def train(cfg: DictConfig):
     # Setup checkpoint directory
     checkpoint_dir = os.path.join(cfg.logging.checkpoint_dir, experiment_name)
     os.makedirs(checkpoint_dir, exist_ok=True)
+    
+    # Setup training kwargs
+    trainer_kwargs = OmegaConf.to_container(cfg.training.trainer, resolve=True)
     
     # Setup callbacks
     callbacks = [
@@ -135,29 +130,21 @@ def train(cfg: DictConfig):
         EarlyStopping(
             monitor="val_loss",
             mode="min",
-            patience=cfg.training.early_stopping_patience,
+            patience=cfg.training.callbacks.patience,
             verbose=True
         ),
     ]
     
-    # ============================================================
-    # TRAINING TRAINER: Use multi-GPU if available
-    # ============================================================
-    trainer_kwargs = {
+    # Setup trainer
+    trainer_kwargs.update({
         "default_root_dir": checkpoint_dir,
-        "accelerator": cfg.training.accelerator,
-        "devices": cfg.training.devices,  # Use all available GPUs for training
-        "max_epochs": cfg.training.max_epochs,
         "logger": logger,
         "callbacks": callbacks,
-        "log_every_n_steps": cfg.training.log_every_n_steps,
-    }
-    
-    # Add gradient clipping if specified
-    if cfg.training.gradient_clip_val is not None:
-        trainer_kwargs["gradient_clip_val"] = cfg.training.gradient_clip_val
+        
+    })
     
     trainer = L.Trainer(**trainer_kwargs)
+
     
     # Train
     print(f"\n{'='*70}")
@@ -198,8 +185,8 @@ def train(cfg: DictConfig):
     print(f"{'='*70}\n")
     
     test_trainer = L.Trainer(
-        accelerator=cfg.training.accelerator,
-        devices=1,  # ← SINGLE GPU for testing
+        accelerator=cfg.training.trainer.accelerator,
+        devices=1, 
         logger=logger,
     )
     
@@ -212,7 +199,7 @@ def train(cfg: DictConfig):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     complexity_metrics = compute_model_complexity(
         best_model.model.to(device),
-        input_size=(3, cfg.data.img_size, cfg.data.img_size)
+        input_size=(3, cfg.data.hparams.img_size, cfg.data.hparams.img_size)
     )
     
     # Measure inference latency

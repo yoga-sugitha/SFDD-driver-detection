@@ -1,6 +1,7 @@
 # RestNet from scratch
 name: "resnet_scratch"
-pretrained: false
-c_hidden: [16,32,64]
-num_blocks: [3, 3, 3]
-act_fn_name: "relu"
+hparams:
+  pretrained: false
+  c_hidden: [16,32,64]
+  num_blocks: [3, 3, 3]
+  act_fn_name: "relu"

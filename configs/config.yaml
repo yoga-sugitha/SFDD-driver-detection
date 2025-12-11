@@ -1,6 +1,6 @@
 # configs/config.yaml
 defaults:
-  - data: sfdd
+  - data: howdrive_sample
   - model: resnet
   - optimizer: adam
   - training: default
@@ -8,3 +8,5 @@ defaults:
   - experiment: default
   - xai: default
   - _self_
+
+train_seed: 42
