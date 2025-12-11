@@ -7,4 +7,3 @@ hparams:
   img_size: 224
   seed: 42
   task_type: "multiclass"          # or "binary"
-binary_mapping: "c0_vs_rest"     # only used if task_type == binary

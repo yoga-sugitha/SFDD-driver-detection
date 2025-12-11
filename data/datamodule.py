@@ -20,10 +20,6 @@ class SFDDDataModule(L.LightningDataModule):
         img_size: Image size for resizing
         seed: Random seed for reproducibility
         task_type: Classification type - 'binary' or 'multiclass'
-        binary_mapping: How to map classes for binary classification
-                       'c0_vs_rest': c0 (normal) = 0, c1-c9 (distracted) = 1 (default)
-                       'custom': provide custom mapping via binary_class_map
-        binary_class_map: Custom dict mapping original class -> binary class (0 or 1)
     """
     def __init__(
         self, 
@@ -34,8 +30,6 @@ class SFDDDataModule(L.LightningDataModule):
         img_size: int = 224,
         seed: int = 42,
         task_type: str = 'multiclass',  # 'binary' or 'multiclass'
-        binary_mapping: str = 'c0_vs_rest',
-        binary_class_map: dict = None,
     ):
         super().__init__()
         self.data_dir = data_dir
@@ -44,8 +38,6 @@ class SFDDDataModule(L.LightningDataModule):
         self.seed = seed
         self.img_size = img_size
         self.task_type = task_type.lower()
-        self.binary_mapping = binary_mapping
-        self.binary_class_map = binary_class_map
 
         # Immediately compute and store
         self.num_classes = 2 if self.task_type == 'binary' else 10
@@ -100,16 +92,22 @@ class SFDDDataModule(L.LightningDataModule):
             self.full_dataset = datasets.ImageFolder(self.data_dir)
             self.paths = [sample[0] for sample in self.full_dataset.imgs]
             self.original_labels = [sample[1] for sample in self.full_dataset.imgs]
-            
-            # Convert labels based on task type
+
             if self.task_type == 'binary':
-                self.labels = self._convert_to_binary(self.original_labels)
+                self.labels = [0 if label == 0 else 1 for label in self.original_labels]
                 print(f"\n✓ Converted to binary classification:")
                 print(f"  Class 0 (normal): {self.labels.count(0)} samples")
                 print(f"  Class 1 (distracted): {self.labels.count(1)} samples")
-            else:
+
+            elif self.task_type == 'multiclass':
                 self.labels = self.original_labels
                 print(f"\n✓ Using multi-class classification (10 classes)")
+
+            else:
+                raise ValueError(
+                    f"Unknown task_type: '{self.task_type}'. "
+                    f"Use 'binary' or 'multiclass'."
+                )
 
             # Stratified split - 60% train, 20% val, 20% test
             train_val_paths, test_paths, train_val_labels, test_labels = train_test_split(
@@ -188,31 +186,6 @@ class SFDDDataModule(L.LightningDataModule):
         image = self.test_transform(image)  # Apply test-time transform (normalize, etc.)
         
         return image, label
-    
-    def _convert_to_binary(self, labels):
-        """
-        Convert multi-class labels to binary labels
-        
-        Args:
-            labels: List of original class labels (0-9)
-            
-        Returns:
-            List of binary labels (0 or 1)
-        """
-        if self.binary_mapping == 'c0_vs_rest':
-            # Class 0 (normal driving) vs rest (distracted)
-            return [0 if label == 0 else 1 for label in labels]
-        
-        elif self.binary_mapping == 'custom':
-            if self.binary_class_map is None:
-                raise ValueError("binary_mapping='custom' requires binary_class_map to be provided")
-            return [self.binary_class_map.get(label, label) for label in labels]
-        
-        else:
-            raise ValueError(
-                f"Unknown binary_mapping: {self.binary_mapping}. "
-                f"Use 'c0_vs_rest' or 'custom'"
-            )
     
     def train_dataloader(self):
         """Create training dataloader"""

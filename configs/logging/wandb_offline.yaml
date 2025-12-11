@@ -3,4 +3,4 @@ wandb_offline: true             # critical for Kaggle
 checkpoint_dir: "checkpoints"
 
 wandb:
-  wandb_project: "sfdd-driver-detection"
+  wandb_project: "ACRIG-Safedriving"

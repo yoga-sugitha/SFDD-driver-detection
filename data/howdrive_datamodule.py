@@ -37,8 +37,6 @@ class HowDriveDataModule(L.LightningDataModule):
         img_size: int = 224,
         seed: int = 42,
         task_type: str = 'multiclass',
-        binary_mapping: str = 'c0_vs_rest',
-        binary_class_map: dict = None,
     ):
         super().__init__()
         self.data_dir = data_dir
@@ -47,8 +45,6 @@ class HowDriveDataModule(L.LightningDataModule):
         self.seed = seed
         self.img_size = img_size
         self.task_type = task_type.lower()
-        self.binary_mapping = binary_mapping
-        self.binary_class_map = binary_class_map
 
         # Enforce multi-class for this pipeline (subject-wise split assumes 10 classes)
         if self.task_type != 'multiclass':

@@ -78,11 +78,7 @@ def train(cfg: DictConfig):
         raise ValueError(f"Unknown dataset name: {cfg.data.name}")
     
     data_hparams = OmegaConf.to_container(cfg.data.hparams, resolve=True)
-    data_module = data_cls(
-        seed=cfg.data.hparams.seed,
-        binary_mapping=getattr(cfg.data, "binary_mapping", "c0_vs_rest"),
-        **data_hparams
-    )
+    data_module = data_cls(**data_hparams)
     
     # setup data to get actual num_classes and class_names
     data_module.setup(stage='fit')
