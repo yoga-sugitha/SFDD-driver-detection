@@ -1,9 +1,9 @@
-name: "howdrive_fulldataset"
+name: "howdrive"
 hparams:
   data_dir: "/kaggle/input/howd-dataset/original_data_update"
   batch_size: 32
   num_workers: 4
-  val_split: 0.2
+  val_split: 0.0
   img_size: 224
   seed: 42
   task_type: "multiclass"    
