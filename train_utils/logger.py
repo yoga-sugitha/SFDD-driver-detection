@@ -5,9 +5,6 @@ from lightning.pytorch.loggers import WandbLogger, CSVLogger
 import os
 
 def setup_logger(cfg: DictConfig, experiment_name: str):
-    """
-    Setup logger based on config.
-    """
     if cfg.logging.enable_wandb:
         try:
             # Resolve config to plain Python dict for WandB

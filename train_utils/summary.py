@@ -8,18 +8,6 @@ def print_summary(
     complexity_metrics: dict,
     latency_metrics: dict
 ):
-    """
-    Print experiment summary
-    
-    Args:
-        experiment_name: Name of the experiment
-        cfg: Configuration object
-        test_result: Test evaluation results
-        complexity_metrics: Model complexity metrics
-        latency_metrics: Inference latency metrics
-    """
-
-    
     print(f"\n{'='*70}")
     print("EXPERIMENT SUMMARY")
     print(f"{'='*70}")

@@ -14,16 +14,6 @@ from typing import List, Dict, Any
 from models.factory import create_model
 
 class LightningModule(L.LightningModule):
-    """
-    Lightning module for training ResNet models
-    
-    Args:
-        model_name: Name of model architecture
-        model_hparams: Model hyperparameters
-        optimizer_name: Name of optimizer
-        optimizer_hparams: Optimizer hyperparameters
-        class_names: List of class names for logging
-    """
     def __init__(
         self,
         model_name: str,

@@ -13,16 +13,6 @@ from utils.gradcam import generate_gradcam_visualizations
 
 
 def evaluate_model_complexity(model: LightningModule, cfg: DictConfig) -> dict:
-    """
-    Evaluate model complexity metrics
-    
-    Args:
-        model: Lightning model
-        cfg: Configuration object
-        
-    Returns:
-        Dictionary of complexity metrics
-    """
     print(f"\n{'='*70}")
     print("Evaluating Model Complexity...")
     print(f"{'='*70}\n")

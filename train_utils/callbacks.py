@@ -8,16 +8,6 @@ from lightning.pytorch.callbacks import (
 )
 
 def setup_callbacks(cfg: DictConfig, checkpoint_dir: str) -> list:
-    """
-    Setup training callbacks
-    
-    Args:
-        cfg: Configuration object
-        checkpoint_dir: Directory for saving checkpoints
-        
-    Returns:
-        List of callbacks
-    """
     callbacks = [
         ModelCheckpoint(
             save_weights_only=True,
