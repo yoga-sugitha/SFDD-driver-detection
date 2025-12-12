@@ -3,6 +3,7 @@ defaults:
   - data: howdrive_sample
   - model: resnet
   - optimizer: adam
+  - scheduler: reducelronplateau
   - training: default
   - logging: wandb_offline
   - experiment: default

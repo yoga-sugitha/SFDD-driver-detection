@@ -1,0 +1,5 @@
+name: "reducelronplateau"
+hparams:
+  mode: "min"
+  factor: 0.1
+  patience: 10

@@ -12,4 +12,4 @@ trainer:
   num_sanity_val_steps: 0         # ✔ avoid pre-validation overhead
   
 callbacks:
-  patience: 7      # ok (won't matter since only 1 epoch)
+  patience: 0      # ok (won't matter since only 1 epoch)

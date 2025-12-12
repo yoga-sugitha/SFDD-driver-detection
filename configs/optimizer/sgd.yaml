@@ -1,0 +1,4 @@
+name: "sgd"
+hparams:
+  lr: 0.01
+  momentum: 0

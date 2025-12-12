@@ -2,6 +2,7 @@
 Lightning training module
 """
 import torch
+import torch.optim as O
 import torch.nn as nn
 import lightning as L
 from torchmetrics import MetricCollection
@@ -29,6 +30,8 @@ class LightningModule(L.LightningModule):
         model_hparams: Dict[str, Any],
         optimizer_name: str,
         optimizer_hparams: Dict[str, Any],
+        scheduler_name: str = None,
+        scheduler_hparams: Dict[str, Any] = None,
         class_names: List[str] = None,
     ):
         super().__init__()
@@ -59,26 +62,36 @@ class LightningModule(L.LightningModule):
         return self.model(imgs)
     
     def configure_optimizers(self):
-        """Configure optimizer and learning rate scheduler"""
-        optimizer_name = self.hparams.optimizer_name.lower()
-        
-        if optimizer_name == "adam":
-            optimizer = torch.optim.Adam(self.parameters(), **self.hparams.optimizer_hparams)
-        elif optimizer_name == "adamw":
-            optimizer = torch.optim.AdamW(self.parameters(), **self.hparams.optimizer_hparams)
-        elif optimizer_name == "sgd":
-            optimizer = torch.optim.SGD(self.parameters(), **self.hparams.optimizer_hparams)
-        else:
-            print(f"Warning: Unknown optimizer {optimizer_name}, using Adam")
-            optimizer = torch.optim.Adam(self.parameters(), **self.hparams.optimizer_hparams)
-        
-        scheduler = {
-            "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer, mode="min", factor=0.1, patience=10
-            ),
-            "monitor": "val_loss",
+        # NOTE: -- Optimizer --
+        opt_lower = self.hparams.optimizer_name.lower()
+        opt_cls = {
+            "adam": O.Adam,
+            "adamw": O.AdamW,
+            "sgd": O.SGD,
+        }.get(opt_lower, O.Adam)
+        optimizer = opt_cls(self.parameters(), ** self.hparams.optimizer_hparams)
+
+        # NOTE: -- Scheduler --
+        if not self.hparams.scheduler_name:
+            return optimizer
+        sch_lower = self.hparams.scheduler_name.lower()
+        sch_map = {
+            "reducelronplateau": O.lr_scheduler.ReduceLROnPlateau,
+            "steplr": O.lr_scheduler.StepLR,
+            "cosineannealinglr": O.lr_scheduler.CosineAnnealingLR,
+            "onecyclelr": O.lr_scheduler.OneCycleLR,
         }
-        return [optimizer], [scheduler]
+        if sch_lower not in sch_map:
+            raise ValueError(f"Unknown scheduler: {self.hparams.scheduler_name}")
+        
+        sch_cls = sch_map[sch_lower]
+        scheduler = sch_cls(optimizer, **self.hparams.scheduler_hparams)
+
+        lr_scheduler_config = {"scheduler": scheduler}
+        if sch_lower == "reducelronplateau":
+            lr_scheduler_config["monitor"] = "val_loss"
+
+        return [optimizer], [lr_scheduler_config]
     
     def _shared_step(self, batch):
         """Shared step for train/val/test"""
