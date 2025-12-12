@@ -1,4 +1,4 @@
-training:
+trainer:
   accelerator: "auto"
   devices: "auto"
   max_epochs: 30
