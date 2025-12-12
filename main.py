@@ -66,7 +66,7 @@ def train(cfg: DictConfig):
         optimizer_name=cfg.optimizer.name,
         optimizer_hparams=OmegaConf.to_container(cfg.optimizer.hparams, resolve=True),
         scheduler_name=cfg.scheduler.name,
-        scheduler_hparams=OmegaConf.to_container(cfg.scheduler.hparams, resolve=True)
+        scheduler_hparams=OmegaConf.to_container(cfg.scheduler.hparams, resolve=True),
         class_names=data_module.class_names,
     )
     
