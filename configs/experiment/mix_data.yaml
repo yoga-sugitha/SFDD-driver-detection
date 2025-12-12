@@ -1,0 +1,4 @@
+id: ${now:%Y%m%d-%H%M%S}
+dataset_name: HowDrive_SFDD
+seed: 42
+tags: ["resnet", "howdrive_benchmark","sfdd_rerun", "driver-state"]
