@@ -1,4 +1,4 @@
-name: "sfdd_fullset"
+name: "sfdd"
 hparams:
   data_dir: "/kaggle/input/state-farm-distracted-driver-detection/imgs/train"
   batch_size: 32
