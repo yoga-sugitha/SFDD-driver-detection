@@ -38,9 +38,9 @@ def train(cfg: DictConfig):
     # NOTE: Seed and experiment name
     L.seed_everything(cfg.experiment.seed, workers=True)
     experiment_name = (
-        f"{cfg.model.name}_{cfg.experiment.dataset_name}_{cfg.data.name}_"
-        f"{cfg.data.hparams.task_type}_{cfg.optimizer.name}_"
-        f"{cfg.experiment.seed}_{cfg.training.trainer.max_epochs}_"
+        f"{cfg.model.name}_dataset--{cfg.data.name}_"
+        f"task--{cfg.data.hparams.task_type}_{cfg.optimizer.name}_"
+        f"seed--{cfg.experiment.seed}_epoch--{cfg.training.trainer.max_epochs}_"
         f"{cfg.experiment.id}"
     )
     print(f"Starting Experiment: {experiment_name}\n")
