@@ -5,6 +5,7 @@ import torch.nn as nn
 from typing import Dict, Any
 from .resnet import ResNet
 from .pretrained import create_pretrained_resnet
+from .core_resnet import ConvResNet
 
 def create_model(model_name: str, model_hparams: Dict[str, Any]) -> nn.Module:
     """
@@ -23,6 +24,7 @@ def create_model(model_name: str, model_hparams: Dict[str, Any]) -> nn.Module:
     model_registry = {
         "resnet_scratch": ResNet,
         "resnet18": create_pretrained_resnet,
+        "resnet_core": ConvResNet,
     }
     
     if model_name not in model_registry:
