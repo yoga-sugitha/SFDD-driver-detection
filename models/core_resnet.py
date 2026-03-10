@@ -122,7 +122,7 @@ class InterleavedGroup(nn.Module):
         return self.group(x)
 
 
-class InterleavedConvResNet(nn.Module):
+class ConvResNet(nn.Module):
     """
     Fully interleaved Conv + Residual network.
 
