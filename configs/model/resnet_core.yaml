@@ -10,7 +10,16 @@ name: "resnet_core"
 #   early_res_insert_after: 2
 
 #interleaved version
+# hparams:
+#   group_channels: [128, 256, 512]   # 3 groups = 6 conv layers
+#   conv_per_group: 2
+#   act_fn_name: "relu"
+
+# fully interleaved version
 hparams:
-  group_channels: [128, 256, 512]   # 3 groups = 6 conv layers
-  conv_per_group: 2
+  group_channels: [128, 256, 512]
+  res_every: 2
   act_fn_name: "relu"
+  use_se: true
+  se_reduction: 16
+  dropout_p: 0.3
